@@ -1,0 +1,93 @@
+.code-editor-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: #1e1e1e;
+}
+
+.editor-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: #252526;
+  border-bottom: 1px solid #3e3e42;
+}
+
+.toolbar-left,
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.language-selector,
+.theme-selector {
+  padding: 6px 12px;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  background-color: #1e1e1e;
+  color: #cccccc;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.language-selector:hover,
+.theme-selector:hover {
+  background-color: #2a2d2e;
+}
+
+.submit-button {
+  padding: 8px 20px;
+  background-color: #0d7377;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.submit-button:hover {
+  background-color: #14a085;
+}
+
+.submit-button:active {
+  background-color: #0a5d61;
+}
+
+.submit-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.submit-button-pending {
+  background-color: #6b7280;
+}
+
+.submit-button-pending:hover {
+  background-color: #6b7280;
+}
+
+.submit-button-success {
+  background-color: #10b981;
+}
+
+.submit-button-success:hover {
+  background-color: #059669;
+}
+
+.submit-button-error {
+  background-color: #ef4444;
+}
+
+.submit-button-error:hover {
+  background-color: #dc2626;
+}
+
+.editor-wrapper {
+  flex: 1;
+  overflow: hidden;
+}
+

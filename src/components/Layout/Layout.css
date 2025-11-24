@@ -1,0 +1,33 @@
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.layout-panel {
+  overflow-y: auto;
+  border-right: 1px solid #e5e7eb;
+}
+
+.layout-panel:last-child {
+  border-right: none;
+}
+
+@media (max-width: 1200px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  
+  .layout-panel {
+    height: 33.33vh;
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  
+  .layout-panel:last-child {
+    border-bottom: none;
+  }
+}
+
