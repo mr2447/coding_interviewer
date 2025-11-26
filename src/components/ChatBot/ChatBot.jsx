@@ -4,13 +4,7 @@ import { mockOpenAIResponse } from '../../utils/mockOpenAI';
 import './ChatBot.css';
 
 const ChatBot = ({ codeContent }) => {
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      content: "Hello! I'm your coding interview assistant. I can help you with hints, code review, and explanations. Feel free to ask me anything about the problem or your code!"
-    }
-  ]);
-  const [inputValue, setInputValue] = useState('');
+  const [hints, setHints] = useState([]); // Store only generated hints
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
@@ -20,53 +14,52 @@ const ChatBot = ({ codeContent }) => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [hints]);
 
-  const handleSend = async () => {
-    if (!inputValue.trim() || isLoading) return;
+  const handleGenerateHint = async () => {
+    if (isLoading) return;
 
-    const userMessage = {
-      role: 'user',
-      content: inputValue
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInputValue('');
     setIsLoading(true);
 
     try {
-      const response = await mockOpenAIResponse(inputValue, codeContent);
-      setMessages(prev => [...prev, response]);
+      // Collect all previous hints into a string
+      const previousHints = hints.map(hint => hint.content).join('\n\n');
+      
+      // Call the mock API with code and previous hints
+      const response = await mockOpenAIResponse(codeContent, previousHints);
+      
+      // Add the new hint to the list
+      setHints(prev => [...prev, response]);
     } catch (error) {
-      setMessages(prev => [...prev, {
+      console.error('Error generating hint:', error);
+      setHints(prev => [...prev, {
         role: 'assistant',
-        content: 'Sorry, I encountered an error. Please try again.'
+        content: 'Sorry, I encountered an error generating a hint. Please try again.'
       }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
   return (
     <div className="chatbot-container">
       <div className="chatbot-header">
-        <h3>AI Assistant</h3>
+        <h3>AI Hints</h3>
         <div className="chatbot-status">
           <span className="status-indicator"></span>
           Online
         </div>
       </div>
       <div className="chatbot-messages">
-        {messages.map((message, idx) => (
-          <Message key={idx} message={message} />
-        ))}
+        {hints.length === 0 ? (
+          <div className="no-hints-message">
+            Click "Generate Hint" to get help with your code.
+          </div>
+        ) : (
+          hints.map((hint, idx) => (
+            <Message key={idx} message={hint} />
+          ))
+        )}
         {isLoading && (
           <div className="message message-assistant">
             <div className="message-content">
@@ -81,21 +74,12 @@ const ChatBot = ({ codeContent }) => {
         <div ref={messagesEndRef} />
       </div>
       <div className="chatbot-input-container">
-        <textarea
-          className="chatbot-input"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="Ask a question about the problem or your code..."
-          rows={3}
-          disabled={isLoading}
-        />
         <button
-          className="chatbot-send-button"
-          onClick={handleSend}
-          disabled={isLoading || !inputValue.trim()}
+          className="chatbot-generate-button"
+          onClick={handleGenerateHint}
+          disabled={isLoading}
         >
-          Send
+          {isLoading ? 'Generating...' : 'Generate Hint'}
         </button>
       </div>
     </div>

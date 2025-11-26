@@ -1,58 +1,49 @@
-// Mock OpenAI API function that simulates responses
-export const mockOpenAIResponse = async (userMessage, codeContent) => {
+// Mock OpenAI API function that simulates hint generation
+export const mockOpenAIResponse = async (codeContent, previousHints = '') => {
   // Simulate API delay
   await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000));
 
-  // Generate mock responses based on message content
-  const message = userMessage.toLowerCase();
+  const hasCode = codeContent && codeContent.trim().length > 0;
+  const hasPreviousHints = previousHints && previousHints.trim().length > 0;
   
-  if (message.includes('hint') || message.includes('help')) {
+  // If no code has been written yet
+  if (!hasCode) {
     return {
       role: 'assistant',
-      content: `Here's a hint: Try using a hash map or two-pointer technique. Looking at your current code, I notice you're on the right track. Consider optimizing the time complexity by reducing nested loops.`
+      content: `Start by writing some code in the editor. Once you have some code written, I can provide more specific hints based on your implementation!`
     };
   }
   
-  if (message.includes('complexity') || message.includes('time') || message.includes('space')) {
+  // If there are previous hints, generate a more advanced/progressive hint
+  if (hasPreviousHints) {
+    const advancedHints = [
+      `Building on the previous hint: Consider using a two-pointer approach starting from both ends of the array. This can help you find the solution in O(n) time.`,
+      `Here's another approach: You might want to preprocess your data structure. Try sorting the array first, which will open up more efficient algorithms.`,
+      `Think about edge cases: What happens when the input is empty? Or when multiple solutions exist? Make sure your code handles all scenarios.`,
+      `Optimization tip: Instead of checking every possible pair, use a hash map to store what you've seen so far. This reduces lookups to O(1).`,
+      `Consider the space-time tradeoff: You can reduce time complexity by using more space, or optimize space by accepting a slower algorithm.`,
+      `Take a closer look at your loop structure. There might be a way to eliminate nested iterations and improve efficiency.`,
+      `Have you considered using a sliding window technique? This pattern works well for many array problems.`
+    ];
     return {
       role: 'assistant',
-      content: `Your current solution has a time complexity of O(n²) in the worst case. You can optimize this to O(n) by using a hash map. The space complexity would be O(n) for storing the hash map.`
+      content: advancedHints[Math.floor(Math.random() * advancedHints.length)]
     };
   }
   
-  if (message.includes('bug') || message.includes('error') || message.includes('wrong')) {
-    return {
-      role: 'assistant',
-      content: `I see a potential issue in your code. Make sure to handle edge cases like empty arrays or null values. Also, check your loop boundaries - you might be going out of bounds.`
-    };
-  }
-  
-  if (message.includes('test') || message.includes('example')) {
-    return {
-      role: 'assistant',
-      content: `Let's trace through the first example: For input [2,7,11,15] with target 9, your code should find indices [0,1] since nums[0] + nums[1] = 2 + 7 = 9.`
-    };
-  }
-  
-  if (codeContent && codeContent.length < 50) {
-    return {
-      role: 'assistant',
-      content: `I see you're just getting started. Here's a suggestion: Start by iterating through the array and for each element, check if its complement (target - current element) exists in the array.`
-    };
-  }
-  
-  // Default response
-  const responses = [
-    `That's a good approach! Your code looks clean. One suggestion: consider adding comments to explain your logic, especially for the hash map operations.`,
-    `I can see you're using a brute force approach. While this works, you could optimize it using a hash map to reduce the time complexity from O(n²) to O(n).`,
-    `Your solution handles the basic case well. Don't forget to consider edge cases like when the array has fewer than 2 elements or when no solution exists.`,
-    `Good progress! The logic is sound. You might want to add some input validation and error handling to make your code more robust.`,
-    `I notice you're on the right track. Consider using a more efficient data structure to improve performance. A hash map would be perfect for this problem.`
+  // First hint - more general and encouraging
+  const firstHints = [
+    `Here's a hint: Try using a hash map or dictionary to store values as you iterate. This can help you solve this problem in linear time.`,
+    `Start by thinking about what data structure would help you quickly look up values you've already seen during iteration.`,
+    `Consider using a two-pointer technique if the input array is sorted. This is a common pattern for array problems.`,
+    `Think about what you need to track as you iterate through the array. What information would help you solve this efficiently?`,
+    `A common approach is to trade space for time - use extra memory to store intermediate results and speed up your algorithm.`,
+    `Look at your current code structure. Consider breaking the problem down into smaller subproblems that you can solve independently.`
   ];
   
   return {
     role: 'assistant',
-    content: responses[Math.floor(Math.random() * responses.length)]
+    content: firstHints[Math.floor(Math.random() * firstHints.length)]
   };
 };
 
