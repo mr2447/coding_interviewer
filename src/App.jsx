@@ -4,6 +4,7 @@ import QuestionPanel from './components/QuestionPanel/QuestionPanel';
 import CodeEditor from './components/CodeEditor/CodeEditor';
 import ChatBot from './components/ChatBot/ChatBot';
 import { mockQuestions } from './data/mockQuestions';
+import { submitCode, fetchQuestion } from './utils/api';
 import './App.css';
 
 function App() {
@@ -19,12 +20,24 @@ function App() {
   }, []);
 
   // Function to load a new random question
-  const loadNewQuestion = () => {
-    const randomIndex = Math.floor(Math.random() * mockQuestions.length);
-    setCurrentQuestion(mockQuestions[randomIndex]);
+  const loadNewQuestion = async () => {
     setCode(''); // Reset code editor
     chatBotResetKey.current += 1; // Reset chatbot messages
     setSubmissionStatus(null); // Reset submission status
+
+    try {
+      // Try to fetch a random question from the backend API
+      const question = await fetchQuestion({ random: true });
+      setCurrentQuestion(question);
+    } catch (error) {
+      console.error(
+        'Failed to fetch question from API, falling back to mock data:',
+        error
+      );
+      // Fallback to local mock questions if the API is unavailable
+      const randomIndex = Math.floor(Math.random() * mockQuestions.length);
+      setCurrentQuestion(mockQuestions[randomIndex]);
+    }
   };
 
   const handleCodeChange = (newCode) => {
@@ -42,24 +55,24 @@ function App() {
       return;
     }
 
+    if (!currentQuestion) {
+      alert('Question is not loaded yet. Please try again.');
+      return;
+    }
+
     setSubmissionStatus('pending');
     
     try {
-      // TODO: Replace with actual API call to backend
-      // const response = await fetch('/api/submit', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({ code: submittedCode, language, questionId: currentQuestion.id })
-      // });
-      // const result = await response.json();
-      
-      // Mock API call - simulate network delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Mock successful submission (replace with actual result from API)
-      const mockSuccess = true;
-      
-      if (mockSuccess) {
+      // Call backend API through API Gateway
+      const result = await submitCode({
+        code: submittedCode,
+        language,
+        questionId: currentQuestion.id,
+        // TODO: Replace with actual user ID from Cognito authentication
+        userId: 'demo-user',
+      });
+
+      if (result.success) {
         setSubmissionStatus('success');
         // Auto-load new question after successful submission
         setTimeout(() => {
@@ -99,7 +112,9 @@ function App() {
         }
         rightPanel={
           <ChatBot 
-            codeContent={code} 
+            codeContent={code}
+            questionId={currentQuestion?.id}
+            questionPrompt={currentQuestion?.description}
             key={chatBotResetKey.current}
           />
         }

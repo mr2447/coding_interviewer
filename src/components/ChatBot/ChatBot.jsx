@@ -1,12 +1,18 @@
 import { useState, useRef, useEffect } from 'react';
 import Message from './Message';
 import { mockOpenAIResponse } from '../../utils/mockOpenAI';
+import { generateHint } from '../../utils/api';
 import './ChatBot.css';
 
-const ChatBot = ({ codeContent }) => {
+const ChatBot = ({ codeContent, questionId, questionPrompt }) => {
   const [hints, setHints] = useState([]); // Store only generated hints
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
+  // A simple per-session conversation identifier; backend/OpenAI can use this
+  // to maintain chat history without sending full previousHints.
+  const conversationIdRef = useRef(
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -24,10 +30,25 @@ const ChatBot = ({ codeContent }) => {
     try {
       // Collect all previous hints into a string
       const previousHints = hints.map(hint => hint.content).join('\n\n');
-      
-      // Call the mock API with code and previous hints
-      const response = await mockOpenAIResponse(codeContent, previousHints);
-      
+
+      let response;
+      try {
+        // Prefer calling the real backend hint API
+        response = await generateHint({
+          code: codeContent,
+          questionId,
+          questionPrompt,
+          conversationId: conversationIdRef.current,
+        });
+      } catch (apiError) {
+        console.warn(
+          'Hint API call failed, falling back to local mock hints:',
+          apiError
+        );
+        // Fall back to local mock hint generator if backend is unavailable
+        response = await mockOpenAIResponse(codeContent, previousHints);
+      }
+
       // Add the new hint to the list
       setHints(prev => [...prev, response]);
     } catch (error) {
