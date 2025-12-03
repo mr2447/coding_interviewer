@@ -1,0 +1,420 @@
+openapi: 3.0.1
+info:
+  title: Coding Interviewer API
+  description: API for code submission, AI hints, and question fetching
+  version: 1.0.0
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/{stage}
+    variables:
+      apiId:
+        default: YOUR_API_ID
+      region:
+        default: us-east-1
+      stage:
+        default: prod
+
+paths:
+  /submit:
+    post:
+      summary: Submit code for evaluation
+      description: Submits user's code solution for a coding question and returns test results
+      operationId: submitCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+                - questionId
+                - language
+                - timestamp
+                - userId
+              properties:
+                code:
+                  type: string
+                  description: The user's code solution
+                  example: "function solution(nums, target) {\n    return [0, 1];\n}"
+                questionId:
+                  type: string
+                  description: ID of the question being solved (numeric string like "1" or UUID)
+                  example: "1"
+                language:
+                  type: string
+                  enum: [javascript, python, java]
+                  description: Programming language of the code
+                  example: javascript
+                timestamp:
+                  type: string
+                  format: date-time
+                  description: ISO 8601 timestamp of submission
+                  example: "2024-01-15T10:30:00.000Z"
+                userId:
+                  type: string
+                  description: ID of the user submitting the code
+                  example: "user-123"
+      responses:
+        '200':
+          description: Submission processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  testResults:
+                    type: object
+                    description: Test execution results
+                    properties:
+                      passed:
+                        type: integer
+                        description: Number of tests that passed
+                        example: 3
+                      total:
+                        type: integer
+                        description: Total number of tests
+                        example: 3
+                      tests:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            test:
+                              type: integer
+                            status:
+                              type: string
+                              enum: [passed, failed]
+                            error:
+                              type: string
+                              description: Error message if test failed
+                  error:
+                    type: object
+                    description: Error details if submission failed
+                    properties:
+                      type:
+                        type: string
+                        enum: [runtime_error, test_failure, compile_error]
+                      message:
+                        type: string
+                      details:
+                        type: string
+        '400':
+          description: Bad request - invalid input
+        '500':
+          description: Internal server error
+      # Lambda integration will be configured manually after import
+      # Integration type: AWS Lambda Function
+      # Use Lambda Proxy integration: Yes
+      # Lambda Function: codeSubmissionFunction
+      x-amazon-apigateway-cors:
+        allowOrigins:
+          - "*"
+        allowHeaders:
+          - Content-Type
+          - X-Amz-Date
+          - Authorization
+          - X-Api-Key
+          - X-Amz-Security-Token
+        allowMethods:
+          - POST
+          - OPTIONS
+        maxAge: 86400
+
+  /hints:
+    post:
+      summary: Generate AI hint for code
+      description: Generates an AI-powered hint based on the user's code and question
+      operationId: generateHint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+                - questionId
+                - questionPrompt
+                - conversationId
+              properties:
+                code:
+                  type: string
+                  description: The user's current code
+                  example: "function solution(nums, target) {\n    // Write your code here\n}"
+                questionId:
+                  type: string
+                  description: ID of the current question (numeric string like "1" or UUID)
+                  example: "1"
+                questionPrompt:
+                  type: string
+                  description: The full question description/prompt text
+                  example: "Given an array of integers nums and an integer target..."
+                conversationId:
+                  type: string
+                  description: Unique identifier for this conversation/hint session (used by OpenAI for chat history)
+                  example: "1712345678901-abc123"
+      responses:
+        '200':
+          description: Hint generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  hint:
+                    type: string
+                    description: The generated hint text
+                    example: "Consider using a hash map to store values as you iterate."
+                  error:
+                    type: object
+                    description: Error details if hint generation failed
+                    properties:
+                      type:
+                        type: string
+                      message:
+                        type: string
+                      details:
+                        type: string
+        '400':
+          description: Bad request - invalid input
+        '500':
+          description: Internal server error
+      # Lambda integration will be configured manually after import
+      # Integration type: AWS Lambda Function
+      # Use Lambda Proxy integration: Yes
+      # Lambda Function: hintGenerationFunction
+      x-amazon-apigateway-cors:
+        allowOrigins:
+          - "*"
+        allowHeaders:
+          - Content-Type
+          - X-Amz-Date
+          - Authorization
+          - X-Api-Key
+          - X-Amz-Security-Token
+        allowMethods:
+          - POST
+          - OPTIONS
+        maxAge: 86400
+
+  /questions:
+    get:
+      summary: Fetch coding questions
+      description: Retrieves coding interview questions, optionally filtered by topic and difficulty
+      operationId: fetchQuestion
+      parameters:
+        - name: random
+          in: query
+          description: If true, return a single random question
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: topicId
+          in: query
+          description: Filter by topic ID (e.g., "arrays", "graphs")
+          required: false
+          schema:
+            type: string
+            nullable: true
+        - name: difficulty
+          in: query
+          description: Filter by difficulty level
+          required: false
+          schema:
+            type: string
+            enum: [easy, medium, hard]
+            nullable: true
+      responses:
+        '200':
+          description: Question retrieved successfully (single question object)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: Question ID (can be numeric string like "1" or UUID)
+                  title:
+                    type: string
+                    description: Question title
+                  difficulty:
+                    type: string
+                    enum: [Easy, Medium, Hard]
+                    description: Difficulty level
+                  description:
+                    type: string
+                    description: Full question description/prompt
+                  examples:
+                    type: array
+                    description: Example inputs and outputs
+                    items:
+                      type: object
+                      properties:
+                        input:
+                          type: string
+                        output:
+                          type: string
+                        explanation:
+                          type: string
+                  constraints:
+                    type: array
+                    description: Problem constraints
+                    items:
+                      type: string
+                  hints:
+                    type: array
+                    description: Hint suggestions
+                    items:
+                      type: string
+              examples:
+                singleQuestion:
+                  value:
+                    id: "1"
+                    title: "Two Sum"
+                    difficulty: "Easy"
+                    description: "Given an array of integers nums and an integer target..."
+                    examples:
+                      - input: "nums = [2,7,11,15], target = 9"
+                        output: "[0,1]"
+                        explanation: "Because nums[0] + nums[1] == 9..."
+                    constraints:
+                      - "2 ≤ nums.length ≤ 10⁴"
+                    hints:
+                      - "Use a hash map..."
+        '400':
+          description: Bad request - invalid query parameters
+        '500':
+          description: Internal server error
+      # Lambda integration will be configured manually after import
+      # Integration type: AWS Lambda Function
+      # Use Lambda Proxy integration: Yes
+      # Lambda Function: questionServiceFunction
+      x-amazon-apigateway-cors:
+        allowOrigins:
+          - "*"
+        allowHeaders:
+          - Content-Type
+          - X-Amz-Date
+          - Authorization
+          - X-Api-Key
+          - X-Amz-Security-Token
+        allowMethods:
+          - GET
+          - OPTIONS
+        maxAge: 86400
+
+  /question/next:
+    post:
+      summary: Get next question based on user preferences
+      description: Retrieves a coding question based on user preferences. If topic or difficulty are null, AI will decide based on user history and performance.
+      operationId: getNextQuestion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_name
+              properties:
+                user_name:
+                  type: string
+                  description: Name/ID of the user
+                  example: "Jesse"
+                topic:
+                  type: string
+                  nullable: true
+                  description: Topic filter (e.g., "Arrays", "Graphs"). Null means AI decides.
+                  example: "Arrays"
+                difficulty:
+                  type: string
+                  nullable: true
+                  enum: [Easy, Medium, Hard]
+                  description: Difficulty level filter. Null means AI decides.
+                  example: "Medium"
+      responses:
+        '200':
+          description: Question retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  qid:
+                    type: integer
+                    description: Question ID
+                    example: 105
+                  q_name:
+                    type: string
+                    description: Question title
+                    example: "Two Sum"
+                  difficulty:
+                    type: string
+                    enum: [Easy, Medium, Hard]
+                    description: Difficulty level
+                    example: "Easy"
+                  topic:
+                    type: string
+                    description: Topic category
+                    example: "Arrays"
+                  content:
+                    type: string
+                    description: Full question content in markdown format (from S3/Cache)
+                    example: "# Two Sum\n\nGiven an array of integers..."
+                  template:
+                    type: string
+                    description: Starter code template
+                    example: "def twoSum(nums, target):\n    pass"
+                  ai_reasoning:
+                    type: string
+                    nullable: true
+                    description: Optional explanation if AI made the selection
+                    example: "Since you struggled with Arrays recently, let's try a fundamental problem to build confidence."
+              examples:
+                withPreferences:
+                  value:
+                    qid: 105
+                    q_name: "Two Sum"
+                    difficulty: "Easy"
+                    topic: "Arrays"
+                    content: "# Two Sum\n\nGiven an array of integers nums and an integer target..."
+                    template: "def twoSum(nums, target):\n    pass"
+                withAIChoice:
+                  value:
+                    qid: 105
+                    q_name: "Two Sum"
+                    difficulty: "Easy"
+                    topic: "Arrays"
+                    content: "# Two Sum\n\nGiven an array of integers nums and an integer target..."
+                    template: "def twoSum(nums, target):\n    pass"
+                    ai_reasoning: "Since you struggled with Arrays recently, let's try a fundamental problem to build confidence."
+        '400':
+          description: Bad request - invalid input
+        '500':
+          description: Internal server error
+      # Lambda integration will be configured manually after import
+      # Integration type: AWS Lambda Function
+      # Use Lambda Proxy integration: Yes
+      # Lambda Function: questionNextFunction
+      x-amazon-apigateway-cors:
+        allowOrigins:
+          - "*"
+        allowHeaders:
+          - Content-Type
+          - X-Amz-Date
+          - Authorization
+          - X-Api-Key
+          - X-Amz-Security-Token
+        allowMethods:
+          - POST
+          - OPTIONS
+        maxAge: 86400
+

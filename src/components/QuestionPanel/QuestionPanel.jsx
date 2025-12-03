@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import './QuestionPanel.css';
 
-const QuestionPanel = ({ question, onNextQuestion }) => {
+const QuestionPanel = ({ question, onNextQuestion, aiReasoning }) => {
   const [showHints, setShowHints] = useState(false);
 
   if (!question) {
@@ -27,6 +27,11 @@ const QuestionPanel = ({ question, onNextQuestion }) => {
 
   return (
     <div className="question-panel">
+      {aiReasoning && (
+        <div className="ai-reasoning-banner">
+          <strong>AI Suggestion:</strong> {aiReasoning}
+        </div>
+      )}
       <div className="question-header">
         <div className="question-title-wrapper">
           <h2 className="question-title">{question.title}</h2>

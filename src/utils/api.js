@@ -1,5 +1,5 @@
 // Shared API helper for talking to the AWS API Gateway backend
-// Exposes: submitCode, generateHint, fetchQuestion
+// Exposes: submitCode, generateHint, fetchNextQuestion
 
 const API_BASE_URL = import.meta.env.VITE_API_GATEWAY_URL;
 
@@ -120,35 +120,61 @@ export const generateHint = async ({
 };
 
 /**
- * Fetch coding questions from the backend.
- *
- * Supported patterns:
- *   GET /questions?random=true
- *   GET /questions?random=true&topicId=arrays&difficulty=easy
- *
- * User identity should come from Cognito (JWT), not from query params.
+ * Get the next question based on user preferences.
+ * 
+ * POST /question/next
+ * 
+ * Request body:
+ * {
+ *   user_name: string,
+ *   topic: string | null,      // Optional, null means AI decides
+ *   difficulty: string | null  // Optional, null means AI decides
+ * }
+ * 
+ * Response:
+ * {
+ *   qid: number | string,
+ *   q_name: string,
+ *   difficulty: string,
+ *   topic: string,
+ *   content: string,           // Full markdown content
+ *   template: string,          // Starter code
+ *   ai_reasoning?: string      // Optional explanation if AI made the choice
+ * }
  */
-export const fetchQuestion = async ({
-  random = true,
-  topicId,
-  difficulty,
-} = {}) => {
-  const params = new URLSearchParams();
-  if (random) params.set('random', 'true');
-  if (topicId) params.set('topicId', topicId);
-  if (difficulty) params.set('difficulty', difficulty);
+export const fetchNextQuestion = async ({ userName, topic = null, difficulty = null }) => {
+  const payload = {
+    user_name: userName,
+    topic: topic || null,
+    difficulty: difficulty || null,
+  };
 
-  const query = params.toString();
-  const url = query ? `${buildUrl('/questions')}?${query}` : buildUrl('/questions');
-
-  const response = await fetch(url, {
-    method: 'GET',
+  const response = await fetch(buildUrl('/question/next'), {
+    method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      // Authorization header will be added here when Cognito is wired in
     },
+    body: JSON.stringify(payload),
   });
 
-  return handleResponse(response);
+  const data = await handleResponse(response);
+  
+  // Transform the response to match the expected question format
+  // If the backend returns different field names, adjust this mapping
+  return {
+    id: data.qid?.toString() || data.id?.toString(),
+    title: data.q_name || data.title,
+    difficulty: data.difficulty || 'Easy',
+    topic: data.topic,
+    description: data.content || data.description,
+    template: data.template,
+    aiReasoning: data.ai_reasoning,
+    // Provide defaults for fields that might not be in the response
+    examples: data.examples || [],
+    constraints: data.constraints || [],
+    hints: data.hints || [],
+  };
 };
 
 

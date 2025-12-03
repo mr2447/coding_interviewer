@@ -1,0 +1,241 @@
+.landing-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff;
+}
+
+.landing-header {
+  padding: 20px 40px;
+  background-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.landing-header-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.landing-logo {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0;
+  color: #ffffff;
+}
+
+.landing-nav {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.landing-user {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.landing-button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.landing-button-primary {
+  background-color: #ffffff;
+  color: #667eea;
+}
+
+.landing-button-primary:hover {
+  background-color: #f3f4f6;
+  transform: translateY(-1px);
+}
+
+.landing-button-secondary {
+  background-color: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.landing-button-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.landing-button-cta {
+  background-color: #ffffff;
+  color: #667eea;
+  padding: 16px 32px;
+  font-size: 18px;
+  font-weight: 600;
+  margin-top: 24px;
+}
+
+.landing-button-cta:hover {
+  background-color: #f3f4f6;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+.landing-main {
+  flex: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 60px 40px;
+}
+
+.landing-hero {
+  text-align: center;
+  margin-bottom: 80px;
+}
+
+.landing-hero-title {
+  font-size: 48px;
+  font-weight: 700;
+  margin: 0 0 24px 0;
+  line-height: 1.2;
+}
+
+.landing-hero-subtitle {
+  font-size: 20px;
+  margin: 0;
+  opacity: 0.9;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.landing-features {
+  margin-bottom: 80px;
+}
+
+.landing-features-title {
+  font-size: 36px;
+  font-weight: 600;
+  text-align: center;
+  margin: 0 0 48px 0;
+}
+
+.landing-features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 32px;
+}
+
+.landing-feature {
+  background-color: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 32px;
+  text-align: center;
+  transition: transform 0.2s;
+}
+
+.landing-feature:hover {
+  transform: translateY(-4px);
+}
+
+.landing-feature-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.landing-feature-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+}
+
+.landing-feature-description {
+  font-size: 14px;
+  margin: 0;
+  opacity: 0.9;
+  line-height: 1.6;
+}
+
+.landing-info {
+  margin-bottom: 60px;
+}
+
+.landing-info-title {
+  font-size: 36px;
+  font-weight: 600;
+  text-align: center;
+  margin: 0 0 48px 0;
+}
+
+.landing-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 32px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.landing-step {
+  text-align: center;
+}
+
+.landing-step-number {
+  width: 48px;
+  height: 48px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 auto 16px;
+}
+
+.landing-step-text {
+  font-size: 16px;
+  margin: 0;
+  opacity: 0.9;
+}
+
+.landing-footer {
+  text-align: center;
+  padding: 32px;
+  background-color: rgba(0, 0, 0, 0.2);
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+@media (max-width: 768px) {
+  .landing-hero-title {
+    font-size: 36px;
+  }
+
+  .landing-hero-subtitle {
+    font-size: 18px;
+  }
+
+  .landing-main {
+    padding: 40px 20px;
+  }
+
+  .landing-header {
+    padding: 16px 20px;
+  }
+
+  .landing-nav {
+    gap: 8px;
+  }
+
+  .landing-button {
+    padding: 8px 16px;
+    font-size: 12px;
+  }
+}
+
