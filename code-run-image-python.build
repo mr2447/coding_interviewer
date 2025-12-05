@@ -1,0 +1,15 @@
+FROM python:3.14-slim
+
+#Install compilers
+RUN apt-get update && apt-get install -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+#Install AWS SDK
+RUN pip install boto3
+
+WORKDIR /app
+
+COPY code_runner.py .
+
+ENTRYPOINT ["python3", "code_runner.py"]
