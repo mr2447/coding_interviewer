@@ -59,7 +59,7 @@ export const submitCode = async ({ code, questionId, language, userId }) => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      // In the future, attach Authorization: Bearer <token> from Cognito here
+      // attach Authorization: Bearer <token> from Cognito here
     },
     body: JSON.stringify(payload),
   });
@@ -121,7 +121,7 @@ export const generateHint = async ({
 
 /**
  * Get the next question based on user preferences.
- * 
+ *
  * POST /question/next
  * 
  * Request body:
@@ -130,7 +130,7 @@ export const generateHint = async ({
  *   topic: string | null,      // Optional, null means AI decides
  *   difficulty: string | null  // Optional, null means AI decides
  * }
- * 
+ *
  * Response:
  * {
  *   qid: number | string,
