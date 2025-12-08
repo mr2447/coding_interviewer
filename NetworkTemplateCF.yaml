@@ -1,0 +1,166 @@
+##########Networking Resources
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template coding platform's network
+
+Resources:
+  MainVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}--VPC"}]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MainVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicComputeSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MainVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+
+  PrivateRDSSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MainVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags: [{Key: Name, Value: !Sub "${AWS::StackName}-PrivateRDS"}]
+
+  PrivateRDSSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MainVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [1, !GetAZs ""]
+
+  PublicComputeRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref MainVPC}
+
+  PublicComputeRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicComputeRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+    DependsOn: AttachGateway
+
+  PublicComputeSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicComputeSubnet
+      RouteTableId: !Ref PublicComputeRouteTable
+
+  PrivateRDSRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref MainVPC}
+
+  PrivateRDSSubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateRDSSubnet1
+      RouteTableId: !Ref PrivateRDSRouteTable
+
+  PrivateRDSSubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateRDSSubnet2
+      RouteTableId: !Ref PrivateRDSRouteTable
+
+  SQSVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref MainVPC
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.sqs"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PublicComputeSubnet]
+      SecurityGroupIds: [!Ref VPCEndpointSecurityGroup]
+
+  CloudWatchLogsVpcEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref MainVPC
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.logs"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PublicComputeSubnet]
+      SecurityGroupIds: [!Ref VPCEndpointSecurityGroup]
+
+  LambdaVPCAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Grants permission for Lambda to create ENIs
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:CreateNetworkInterface
+              - ec2:DescribeNetworkInterface
+              - ec2:DeleteNetworkInterface
+            Resource: "*"
+
+  ComputeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref MainVPC
+      GroupDescription: Security Group for Lambda and Fargate tasks.
+      #Permits all internal communication within the group
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 10.0.0.0/16
+      #Permits all outbound traffic
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags: [{Key: Name, Value: !Sub "${AWS::StackName}-ComputeSG"}]
+
+  VPCEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref MainVPC
+      GroupDescription: Security Group for VPC Interface Endpoints
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          #Allow VPC wide access
+          CidrIp: 10.0.0.0/16
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-VPCEndpointSG"
+
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: ComputeSecurityGroup
+    Properties:
+      VpcId: !Ref MainVPC
+      GroupDescription: Security Group for the RDS
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          #RDS only accepts traffic from this security group
+          SourceSecurityGroupId: !Ref ComputeSecurityGroup
+
+Outputs:
+  LambdaVPCAccessPolicy:
+    Value: !Ref LambdaVPCAccessPolicy
+  ComputeSecurityGroup:
+    Value: !Ref ComputeSecurityGroup
+  PublicComputeSubnet:
+    Value: !Ref PublicComputeSubnet

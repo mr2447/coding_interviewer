@@ -1,16 +1,24 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Template for AI assisted coding platform
+
+Parameters:
+  NetworkTemplateURL:
+    Type: String
+#  RDSId:
+#    Type: String
+#  RDSArn:
+#    Type: String
+#  APIGatewayInvokeURL:
+#    Type: String
+
 Resources:
-
-  CodeQueue:
-    Type: AWS::SQS::Queue
+  #Nest stack for network layer
+  NetworkLayerStack:
+    Type: AWS::CloudFormation::Stack
     Properties:
-      QueueName: CodeQueue
-      MaximumMessageSize: 10240
-      MessageRetentionPeriod: 3600
-      ReceiveMessageWaitTimeSeconds: 10
-      #Dead letter queue settings currently not implemented.
-
+      TemplateURL: !Ref NetworkTemplateURL
+      TimeoutInMinutes: 5
+####################IAMRoles##################
   CodeReceiverIAMRole:
     Type: AWS::IAM::Role
     Properties:
@@ -24,6 +32,8 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !GetAtt NetworkLayerStack.Outputs.LambdaVPCAccessPolicy
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
       # Provides permissions to lambda
       Policies:
         - PolicyName: CodeReceiverPermissions
@@ -33,22 +43,9 @@ Resources:
               - Effect: Allow
                 Action: sqs:SendMessage
                 Resource: !GetAtt CodeQueue.Arn
-        #ToDo: will need permission to push user code to
-        #dynamo db. The dynamodb arn can be a parameter if
-        #it isn't created in this template.
-
-  CodeReceiver:
-    Type: AWS::Lambda::Function
-    Properties:
-      Role: !GetAtt CodeReceiverIAMRole.Arn
-      Runtime: python3.14
-      FunctionName: preprocess-submission
-      Code:
-        ZipFile: |
-          def lambda_handler(event, context):
-            return "Hello World!"
-      Handler: index.lambda_handler
-      Timeout: 15
+#              - Effect: Allow
+#                Action: rds-data:ExecuteStatement
+#                Resource: !Ref RDSArn
 
   FargateInvokerIAMRole:
     Type: AWS::IAM::Role
@@ -63,19 +60,32 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-
-  FargateInvoker:
-    Type: AWS::Lambda::Function
-    Properties:
-      Role: !GetAtt FargateInvokerIAMRole.Arn
-      Runtime: python3.14
-      FunctionName: invoke-fargate
-      Code:
-        ZipFile: |
-          def lambda_handler(event, context):
-            return "Hello World!"
-      Handler: index.lambda_handler
-      Timeout: 15
+        - !GetAtt NetworkLayerStack.Outputs.LambdaVPCAccessPolicy
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: FargateInvokerPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:DeleteMessage
+                  - sqs:ChangeMessageVisibility
+                Resource: !GetAtt CodeQueue.Arn
+#              - Effect: Allow
+#                Action: rds-data:ExecuteStatement
+#                Resource: !Ref RDSArn
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Ref CodeRunTaskDefinition
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt CodeRunTaskRole.Arn
+                  - !GetAtt CodeRunExecutionRole.Arn
 
   ResultRelayerIAMRole:
     Type: AWS::IAM::Role
@@ -90,19 +100,19 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-
-  ResultRelayer:
-    Type: AWS::Lambda::Function
-    Properties:
-      Role: !GetAtt ResultRelayerIAMRole.Arn
-      Runtime: python3.14
-      FunctionName: relay-results
-      Code:
-        ZipFile: |
-          def lambda_handler(event, context):
-            return "Hello World!"
-      Handler: index.lambda_handler
-      Timeout: 15
+        - !GetAtt NetworkLayerStack.Outputs.LambdaVPCAccessPolicy
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: ResultRelayerPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+#              - Effect: Allow
+#                Action: rds-data:ExecuteStatement
+#                Resource: !Ref RDSArn
+              - Effect: Allow
+                Action: ssm:GetParametersByPath
+                Resource: '*'
 
   CodeRunExecutionRole:
     Type: AWS::IAM::Role
@@ -135,6 +145,90 @@ Resources:
               - Effect: Allow
                 Action: lambda:InvokeFunction
                 Resource: !GetAtt ResultRelayer.Arn
+
+#########################Lambdas###############
+  CodeReceiver:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt CodeReceiverIAMRole.Arn
+      Runtime: python3.14
+      FunctionName: preprocess-submission
+      VpcConfig:
+        SecurityGroupIds: [!GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup]
+        SubnetIds: [!GetAtt NetworkLayerStack.Outputs.PublicComputeSubnet]
+      Environment:
+        Variables:
+          CodeQueueURL: !Ref CodeQueue
+#          RDSId: !Ref RDSId
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            return "Hello World!"
+      Handler: index.lambda_handler
+      Timeout: 15
+
+  FargateInvoker:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt FargateInvokerIAMRole.Arn
+      Runtime: python3.14
+      FunctionName: invoke-fargate
+      VpcConfig:
+        SecurityGroupIds: [!GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup]
+        SubnetIds: [!GetAtt NetworkLayerStack.Outputs.PublicComputeSubnet]
+      Environment:
+        Variables:
+          Subnets: !GetAtt NetworkLayerStack.Outputs.PublicComputeSubnet
+          SecurityGroup: !GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup
+          Cluster: !Ref CodeRunCluster
+          TaskDef: !Ref CodeRunTaskDefinition
+          ContainerName: "code-run-container"
+          ResultRelayer: !Ref ResultRelayer
+          CodeQueueURL: !Ref CodeQueue
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            return "Hello World!"
+      Handler: index.lambda_handler
+      Timeout: 15
+
+  FargateInvokerSQSTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt CodeQueue.Arn
+      FunctionName: !Ref FargateInvoker
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 1
+      Enabled: True
+
+  ResultRelayer:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt ResultRelayerIAMRole.Arn
+      Runtime: python3.14
+      FunctionName: relay-results
+      VpcConfig:
+        SecurityGroupIds: [!GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup]
+        SubnetIds: [!GetAtt NetworkLayerStack.Outputs.PublicComputeSubnet]
+#      Environment:
+#        RDSArn: !Ref RDSArn
+#        APIGatewayURL: !Ref APIGatewayURL
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            return "Hello World!"
+      Handler: index.lambda_handler
+      Timeout: 15
+
+###########Other Resources###########
+  CodeQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: CodeQueue
+      MaximumMessageSize: 10240
+      MessageRetentionPeriod: 3600
+      ReceiveMessageWaitTimeSeconds: 10
+      #Dead letter queue settings currently not implemented.
 
   CodeRunCluster:
     Type: AWS::ECS::Cluster
@@ -170,3 +264,4 @@ Resources:
               awslogs-stream-prefix: Code-Run-Container
 
   #ToDo: Implement another task definition for running cpp code on image with cpp library
+
