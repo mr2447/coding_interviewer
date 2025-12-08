@@ -9,11 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "amazon-cognito-identity-js": "^6.3.11",
+    "buffer": "^6.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@monaco-editor/react": "^4.6.0",
-    "react-router-dom": "^6.20.0",
-    "amazon-cognito-identity-js": "^6.3.11"
+    "react-router-dom": "^6.20.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
