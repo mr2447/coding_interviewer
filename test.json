@@ -1,0 +1,7 @@
+{
+  "Region": "us-east-2",
+  "cid": "1",
+  "qid": "1",
+  "language": "Python",
+  "submission": "#include string;\nusing namespace std;\nint main()\n{\n\tcout << \"Hello World!\";\n\treturn 0;\n}"
+}

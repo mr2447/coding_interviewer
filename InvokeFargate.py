@@ -26,7 +26,7 @@ def lambda_handler(event, context):
             "code": code,
             "language": language,
             "region": region,
-            'ResultRelayer': os.environ['ResultRelayer']
+            'ResultRelayer': "relay-results"
         }
         # Run task
         try:
@@ -38,7 +38,7 @@ def lambda_handler(event, context):
                 networkConfiguration={
                     "awsvpcConfiguration": {
                         "subnets": os.environ["Subnets"].split(","),
-                        "securityGroups": [os.environ["Security_Group"].strip()],
+                        "securityGroups": [os.environ["SecurityGroup"].strip()],
                         "assignPublicIp": "DISABLED"
                     }
                 },
