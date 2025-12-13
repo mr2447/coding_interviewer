@@ -1,0 +1,371 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template for AI assisted coding platform
+
+Parameters:
+  NetworkTemplateURL:
+    Type: String
+#  RDSId:
+#    Type: String
+#  RDSArn:
+#    Type: String
+#  APIGatewayInvokeURL:
+#    Type: String
+
+Resources:
+  #Nest stack for network layer
+  NetworkLayerStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Ref NetworkTemplateURL
+      TimeoutInMinutes: 5
+####################IAMRoles##################
+  PushToQueueIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #Allows lambda instances to assume this role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      # Provides permissions to lambda
+      Policies:
+        - PolicyName: PushToQueuePermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt CodeQueue.Arn
+
+  ReceiveFromQueueIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      #Allows lambda instances to assume this role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ReceiveFromQueuePermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:DeleteMessage
+                  - sqs:ChangeMessageVisibility
+                Resource: !GetAtt CodeQueue.Arn
+
+  PullTestCasesIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !GetAtt NetworkLayerStack.Outputs.LambdaVPCAccessPolicy
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+#      Policies:
+#        - PolicyName: PullTestCasesPermissions
+#          PolicyDocument:
+#            Version: '2012-10-17'
+#            Statement:
+#              - Effect: Allow
+#                Action: rds-data:ExecuteStatement
+#                Resource: !Ref RDSArn
+
+  InvokeFargateIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: InvokeFargatePermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource: !Ref CodeRunTaskDefinition
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt CodeRunTaskRole.Arn
+                  - !GetAtt CodeRunExecutionRole.Arn
+
+  StoreResultsIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !GetAtt NetworkLayerStack.Outputs.LambdaVPCAccessPolicy
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+#      Policies:
+#        - PolicyName: StoresResultsPermissions
+#          PolicyDocument:
+#            Version: '2012-10-17'
+#            Statement:
+#              - Effect: Allow
+#                Action: rds-data:ExecuteStatement
+#                Resource: !Ref RDSArn
+#              #This is for getting the database loging info, might replace this by providing login info as parameters in the template
+#              - Effect: Allow
+#                Action: ssm:GetParametersByPath
+#                Resource: '*'
+
+  RelayResultsIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: lambda-api-gateway-execution-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  # May or may not be necessary
+  #    Policies:
+  #      - PolicyName: InvokeApiGateway
+  #        PolicyDocument:
+  #          Version: "2012-10-17"
+  #          Statement:
+  #            - Effect: Allow
+  #              Action:
+  #                - execute-api:Invoke
+  #              Resource:
+  #                - arn:aws:execute-api:*:*:*/POST/*
+  #                - arn:aws:execute-api:*:*:*/GET/*
+
+  CodeRunExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  CodeRunTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeRunPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt StoreResults.Arn
+
+#########################Lambdas###############
+  PushToQueue:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt PushToQueueIAMRole.Arn
+      Runtime: python3.14
+      FunctionName: push-to-queue
+      Environment:
+        Variables:
+          CodeQueueURL: !Ref CodeQueue
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            return "Hello World!"
+      Handler: index.lambda_handler
+      Timeout: 15
+
+  ReceiveFromQueue:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt ReceiveFromQueueIAMRole.Arn
+      Runtime: python3.14
+      FunctionName: receive-from-queue
+      Environment:
+        Variables:
+          CodeQueueURL: !Ref CodeQueue
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            return "Hello World!"
+      Handler: index.lambda_handler
+      Timeout: 15
+
+  ReceiveFromQueueSQSTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt CodeQueue.Arn
+      FunctionName: !Ref ReceiveFromQueue
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 1
+      Enabled: True
+
+  PullTestCases:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt PullTestCasesIAMRole.Arn
+      Runtime: python3.14
+      FunctionName: pull-test-cases
+      VpcConfig:
+        SecurityGroupIds: [!GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup]
+        SubnetIds: [!GetAtt NetworkLayerStack.Outputs.PrivateSubnet1]
+      Environment:
+        Variables:
+          Subnets: !GetAtt NetworkLayerStack.Outputs.PrivateSubnet1
+          SecurityGroup: !GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup
+#          RDSId: RDSId
+#          RDSArn: RDSArn
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            return "Hello World!"
+      Handler: index.lambda_handler
+      Timeout: 15
+
+  InvokeFargate:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt InvokeFargateIAMRole.Arn
+      Runtime: python3.14
+      FunctionName: invoke-fargate
+      Environment:
+        Variables:
+          Subnets: !GetAtt NetworkLayerStack.Outputs.PrivateSubnet1
+          SecurityGroup: !GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup
+          Cluster: !Ref CodeRunCluster
+          TaskDef: !Ref CodeRunTaskDefinition
+          ContainerName: "cloudcomputing/project"
+          ResultRelayer: !Ref StoreResults
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            return "Hello World!"
+      Handler: index.lambda_handler
+      Timeout: 15
+
+  StoreResults:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt StoreResultsIAMRole.Arn
+      Runtime: python3.14
+      FunctionName: store-results
+      VpcConfig:
+        SecurityGroupIds: [!GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup]
+        SubnetIds: [!GetAtt NetworkLayerStack.Outputs.PrivateSubnet1]
+#      Environment:
+#        Variables:
+#          RDSArn: !Ref RDSArn
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            return "Hello World!"
+      Handler: index.lambda_handler
+      Timeout: 15
+
+  RelayResults:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt RelayResultsIAMRole.Arn
+      Runtime: python3.14
+      FunctionName: relay-results
+#      Environment:
+#        Variables:
+#          APIGatewayInvokeURL: !Ref APIGatewayInvokeURL
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            return "Hello World!"
+      Handler: index.lambda_handler
+      Timeout: 15
+
+###########Other Resources###########
+  CodeQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: CodeQueue
+      MaximumMessageSize: 10240
+      MessageRetentionPeriod: 3600
+      ReceiveMessageWaitTimeSeconds: 10
+      #Dead letter queue settings currently not implemented.
+
+  CodeRunCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      CapacityProviders:
+        - FARGATE
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${AWS::StackName}"
+
+  CodeRunTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ExecutionRoleArn: !GetAtt CodeRunExecutionRole.Arn
+      TaskRoleArn: !GetAtt CodeRunTaskRole.Arn
+      Cpu: "256"
+      Memory: "1024"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: code-run-container
+          Image: 346225466066.dkr.ecr.us-east-2.amazonaws.com/cloudcomputing/project:python
+          Essential: true
+          #MemoryReservation could be implemented later so that less memory is used when 1 GB isn't needed
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: Code-Run-Container
+
+  #ToDo: Implement another task definition for running cpp code on image with cpp library

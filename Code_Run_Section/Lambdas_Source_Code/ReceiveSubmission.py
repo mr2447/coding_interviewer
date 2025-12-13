@@ -31,7 +31,7 @@ def lambda_handler(event, context):
         "DataType": "String",
         "StringValue": event["language"]
     }
-}
+  }
 
   try:
     codeQueue.send_message(

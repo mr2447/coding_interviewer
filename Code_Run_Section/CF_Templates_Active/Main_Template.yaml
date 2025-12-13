@@ -4,10 +4,20 @@ Description: Template for AI assisted coding platform
 Parameters:
   NetworkTemplateURL:
     Type: String
-#  RDSId:
-#    Type: String
-#  RDSArn:
-#    Type: String
+  RDSLayerArn:
+    Type: String
+  DBHost:
+    Type: String
+  DBUser:
+    Type: String
+  DBPass:
+    Type: String
+  DBName:
+    Type: String
+  DBPort:
+    Type: String
+  RDSArn:
+    Type: String
 #  APIGatewayInvokeURL:
 #    Type: String
 
@@ -19,7 +29,7 @@ Resources:
       TemplateURL: !Ref NetworkTemplateURL
       TimeoutInMinutes: 5
 ####################IAMRoles##################
-  CodeReceiverIAMRole:
+  ReceiveSubmissionIAMRole:
     Type: AWS::IAM::Role
     Properties:
       #Allows lambda instances to assume this role
@@ -32,22 +42,17 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - !GetAtt NetworkLayerStack.Outputs.LambdaVPCAccessPolicy
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
       # Provides permissions to lambda
       Policies:
-        - PolicyName: CodeReceiverPermissions
+        - PolicyName: ReceiveSubmission
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action: sqs:SendMessage
                 Resource: !GetAtt CodeQueue.Arn
-#              - Effect: Allow
-#                Action: rds-data:ExecuteStatement
-#                Resource: !Ref RDSArn
 
-  FargateInvokerIAMRole:
+  InvokeFargateIAMRole:
     Type: AWS::IAM::Role
     Properties:
       #Allows lambda instances to assume this role
@@ -60,10 +65,8 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - !GetAtt NetworkLayerStack.Outputs.LambdaVPCAccessPolicy
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
       Policies:
-        - PolicyName: FargateInvokerPermissions
+        - PolicyName: InvokeFargatePermissions
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -74,23 +77,21 @@ Resources:
                   - sqs:DeleteMessage
                   - sqs:ChangeMessageVisibility
                 Resource: !GetAtt CodeQueue.Arn
-#              - Effect: Allow
-#                Action: rds-data:ExecuteStatement
-#                Resource: !Ref RDSArn
+              - Effect: Allow
+                Action: rds-data:ExecuteStatement
+                Resource: !Ref RDSArn
               - Effect: Allow
                 Action: ecs:RunTask
                 Resource: !Ref CodeRunTaskDefinition
               - Effect: Allow
-                Action:
-                  - iam:PassRole
+                Action: iam:PassRole
                 Resource:
                   - !GetAtt CodeRunTaskRole.Arn
                   - !GetAtt CodeRunExecutionRole.Arn
 
-  ResultRelayerIAMRole:
+  RelayResultsIAMRole:
     Type: AWS::IAM::Role
     Properties:
-      #Allows lambda instances to assume this role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -100,19 +101,26 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - !GetAtt NetworkLayerStack.Outputs.LambdaVPCAccessPolicy
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
       Policies:
-        - PolicyName: ResultRelayerPermissions
+        - PolicyName: RelayResultsPermissions
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-#              - Effect: Allow
-#                Action: rds-data:ExecuteStatement
-#                Resource: !Ref RDSArn
               - Effect: Allow
-                Action: ssm:GetParametersByPath
-                Resource: '*'
+                Action: rds-data:ExecuteStatement
+                Resource: !Ref RDSArn
+  # May or may not be necessary
+  #    Policies:
+  #      - PolicyName: InvokeApiGateway
+  #        PolicyDocument:
+  #          Version: "2012-10-17"
+  #          Statement:
+  #            - Effect: Allow
+  #              Action:
+  #                - execute-api:Invoke
+  #              Resource:
+  #                - arn:aws:execute-api:*:*:*/POST/*
+  #                - arn:aws:execute-api:*:*:*/GET/*
 
   CodeRunExecutionRole:
     Type: AWS::IAM::Role
@@ -144,22 +152,18 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: lambda:InvokeFunction
-                Resource: !GetAtt ResultRelayer.Arn
+                Resource: !GetAtt RelayResults.Arn
 
 #########################Lambdas###############
-  CodeReceiver:
+  ReceiveSubmission:
     Type: AWS::Lambda::Function
     Properties:
-      Role: !GetAtt CodeReceiverIAMRole.Arn
-      Runtime: python3.14
-      FunctionName: preprocess-submission
-      VpcConfig:
-        SecurityGroupIds: [!GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup]
-        SubnetIds: [!GetAtt NetworkLayerStack.Outputs.PublicComputeSubnet]
+      Role: !GetAtt ReceiveSubmissionIAMRole.Arn
+      Runtime: python3.12
+      FunctionName: receive-submission
       Environment:
         Variables:
           CodeQueueURL: !Ref CodeQueue
-#          RDSId: !Ref RDSId
       Code:
         ZipFile: |
           def lambda_handler(event, context):
@@ -167,56 +171,57 @@ Resources:
       Handler: index.lambda_handler
       Timeout: 15
 
-  FargateInvoker:
+  InvokeFargate:
     Type: AWS::Lambda::Function
     Properties:
-      Role: !GetAtt FargateInvokerIAMRole.Arn
-      Runtime: python3.14
+      Role: !GetAtt InvokeFargateIAMRole.Arn
+      Runtime: python3.12
       FunctionName: invoke-fargate
-      VpcConfig:
-        SecurityGroupIds: [!GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup]
-        SubnetIds: [!GetAtt NetworkLayerStack.Outputs.PublicComputeSubnet]
       Environment:
         Variables:
-          Subnets: !GetAtt NetworkLayerStack.Outputs.PublicComputeSubnet
+          #Variables for ECS task
+          Subnets: !GetAtt NetworkLayerStack.Outputs.PrivateSubnet1
           SecurityGroup: !GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup
           Cluster: !Ref CodeRunCluster
           TaskDef: !Ref CodeRunTaskDefinition
-          ContainerName: "code-run-container"
-          ResultRelayer: !Ref ResultRelayer
+          ContainerName: "code-run-image-python"
+          RelayResults: !Ref RelayResults
+          #Variables for DB queries
+          DB_Host: !Ref DBHost
+          DB_User: !Ref DBUser
+          DB_Pass: !Ref DBPass
+          DB_Name: !Ref DBName
+          DB_Port: !Ref DBPort
           CodeQueueURL: !Ref CodeQueue
       Code:
         ZipFile: |
           def lambda_handler(event, context):
             return "Hello World!"
+      Layers:
+        - !Ref RDSLayerArn
       Handler: index.lambda_handler
       Timeout: 15
 
-  FargateInvokerSQSTrigger:
-    Type: AWS::Lambda::EventSourceMapping
-    Properties:
-      EventSourceArn: !GetAtt CodeQueue.Arn
-      FunctionName: !Ref FargateInvoker
-      BatchSize: 10
-      MaximumBatchingWindowInSeconds: 1
-      Enabled: True
-
-  ResultRelayer:
+  RelayResults:
     Type: AWS::Lambda::Function
     Properties:
-      Role: !GetAtt ResultRelayerIAMRole.Arn
-      Runtime: python3.14
+      Role: !GetAtt RelayResultsIAMRole.Arn
+      Runtime: python3.12
       FunctionName: relay-results
-      VpcConfig:
-        SecurityGroupIds: [!GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup]
-        SubnetIds: [!GetAtt NetworkLayerStack.Outputs.PublicComputeSubnet]
-#      Environment:
-#        RDSArn: !Ref RDSArn
-#        APIGatewayURL: !Ref APIGatewayURL
+      Environment:
+        Variables:
+          DB_Host: !Ref DBHost
+          DB_User: !Ref DBUser
+          DB_Pass: !Ref DBPass
+          DB_Name: !Ref DBName
+          #May not be necessary
+#          APIGatewayInvokeURL: !Ref APIGatewayInvokeURL
       Code:
         ZipFile: |
           def lambda_handler(event, context):
             return "Hello World!"
+      Layers:
+        - !Ref RDSLayerArn
       Handler: index.lambda_handler
       Timeout: 15
 
@@ -229,6 +234,15 @@ Resources:
       MessageRetentionPeriod: 3600
       ReceiveMessageWaitTimeSeconds: 10
       #Dead letter queue settings currently not implemented.
+
+  ReceiveFromQueueSQSTrigger:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt CodeQueue.Arn
+      FunctionName: !Ref InvokeFargate
+      BatchSize: 10
+      MaximumBatchingWindowInSeconds: 1
+      Enabled: True
 
   CodeRunCluster:
     Type: AWS::ECS::Cluster
@@ -252,8 +266,8 @@ Resources:
       RequiresCompatibilities:
         - FARGATE
       ContainerDefinitions:
-        - Name: code-run-container
-          Image: 346225466066.dkr.ecr.us-east-2.amazonaws.com/cloudcomputing/project:python
+        - Name: code-run-image-python
+          Image: 346225466066.dkr.ecr.us-east-2.amazonaws.com/code-run-image-python:latest
           Essential: true
           #MemoryReservation could be implemented later so that less memory is used when 1 GB isn't needed
           LogConfiguration:
@@ -262,6 +276,3 @@ Resources:
               awslogs-group: !Ref LogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: Code-Run-Container
-
-  #ToDo: Implement another task definition for running cpp code on image with cpp library
-
