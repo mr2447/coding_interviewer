@@ -1,5 +1,6 @@
 // Shared API helper for talking to the AWS API Gateway backend
 // Exposes: submitCode, generateHint, fetchNextQuestion
+import { getIdToken } from './auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_GATEWAY_URL;
 
@@ -41,6 +42,23 @@ const handleResponse = async (response) => {
   return data;
 };
 
+// Build headers with optional Authorization from Cognito ID token
+const buildAuthHeaders = async (baseHeaders = {}) => {
+  try {
+    const idToken = await getIdToken();
+    if (idToken) {
+      return {
+        ...baseHeaders,
+        Authorization: `Bearer ${idToken}`,
+      };
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('Could not get ID token for request, sending without Authorization', err);
+  }
+  return baseHeaders;
+};
+
 /**
  * Submit code for evaluation.
  * Expects backend Lambda to return:
@@ -55,12 +73,13 @@ export const submitCode = async ({ code, questionId, language, userId }) => {
     userId,
   };
 
+  const headers = await buildAuthHeaders({
+    'Content-Type': 'application/json',
+  });
+
   const response = await fetch(buildUrl('/submit'), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // attach Authorization: Bearer <token> from Cognito here
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 
@@ -101,12 +120,13 @@ export const generateHint = async ({
     question_desc: questionDesc || null,
   };
 
+  const headers = await buildAuthHeaders({
+    'Content-Type': 'application/json',
+  });
+
   const response = await fetch(buildUrl('/hint'), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // Authorization header will be added here when Cognito is wired in
-    },
+    headers,
     body: JSON.stringify(payload),
   });
 
@@ -126,55 +146,61 @@ export const generateHint = async ({
 /**
  * Get the next question based on user preferences.
  *
- * POST /question/next
+ * GET /questions?userId={userId}&topic={topic}&difficulty={difficulty}
  * 
- * Request body:
- * {
- *   userId: string,            // Cognito sub (unique user identifier)
- *   topic: string | null,      // Optional, null means AI decides
- *   difficulty: string | null  // Optional, null means AI decides
- * }
+ * Query parameters:
+ * - userId: string (required) - Cognito sub (unique user identifier)
+ * - topic: string | null (optional) - Topic filter, null means AI decides
+ * - difficulty: string | null (optional) - Difficulty filter, null means AI decides
  *
  * Response:
  * {
- *   qid: number | string,
- *   q_name: string,
+ *   id: string,
+ *   title: string,
  *   difficulty: string,
  *   topic: string,
- *   content: string,           // Full markdown content
+ *   description: string,       // Full question description
  *   template: string,          // Starter code
+ *   examples: array,
+ *   constraints: array,
+ *   hints: array,
  *   ai_reasoning?: string      // Optional explanation if AI made the choice
  * }
  */
 export const fetchNextQuestion = async ({ userId, topic = null, difficulty = null }) => {
-  const payload = {
+  // Build query string
+  const params = new URLSearchParams({
     userId: userId,
-    topic: topic || null,
-    difficulty: difficulty || null,
-  };
+  });
+  
+  if (topic) {
+    params.append('topic', topic);
+  }
+  
+  if (difficulty) {
+    params.append('difficulty', difficulty);
+  }
 
-  const response = await fetch(buildUrl('/question/next'), {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // Authorization header will be added here when Cognito is wired in
-    },
-    body: JSON.stringify(payload),
+  const headers = await buildAuthHeaders({
+    'Content-Type': 'application/json',
+  });
+
+  const response = await fetch(`${buildUrl('/questions')}?${params.toString()}`, {
+    method: 'GET',
+    headers,
   });
 
   const data = await handleResponse(response);
   
   // Transform the response to match the expected question format
-  // If the backend returns different field names, adjust this mapping
   return {
-    id: data.qid?.toString() || data.id?.toString(),
-    title: data.q_name || data.title,
+    id: data.id?.toString(),
+    title: data.title,
     difficulty: data.difficulty || 'Easy',
     topic: data.topic,
-    description: data.content || data.description,
-    template: data.template,
+    description: data.description,
+    template: data.template || '',
     aiReasoning: data.ai_reasoning,
-    // Provide defaults for fields that might not be in the response
     examples: data.examples || [],
     constraints: data.constraints || [],
     hints: data.hints || [],

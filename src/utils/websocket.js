@@ -36,7 +36,8 @@ export class WebSocketClient {
    */
   connect(userId) {
     if (!WEBSOCKET_URL) {
-      throw new Error('WebSocket URL is not configured (VITE_WEBSOCKET_URL)');
+      console.warn('WebSocket URL is not configured (VITE_WEBSOCKET_URL). WebSocket features will be disabled.');
+      return Promise.resolve(); // Don't throw, just skip connection
     }
 
     if (this.isConnecting || this.isConnected) {

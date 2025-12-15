@@ -19,10 +19,11 @@ components:
       type: apiKey
       name: Authorization
       in: header
-      description: |
-        AWS Cognito JWT token. Format: "Bearer <idToken>"
-        The token should contain the user's 'sub' claim which is used as userId.
-        Example: "Bearer eyJraWQiOiJcL0..."
+      x-amazon-apigateway-authtype: cognito_user_pools
+      x-amazon-apigateway-authorizer:
+        type: cognito_user_pools
+        providerARNs:
+          - arn:aws:cognito-idp:us-east-2:346225466066:userpool/us-east-2_jSbGE8cJ3
 
 paths:
   /submit:
@@ -246,9 +247,9 @@ paths:
 
   /questions:
     get:
-      summary: Fetch coding questions
-      description: Retrieves coding interview questions, optionally filtered by topic and difficulty
-      operationId: fetchQuestion
+      summary: Get next question based on user preferences
+      description: Retrieves a coding question based on user preferences. If topic or difficulty are null/not provided, AI will decide based on user history and performance.
+      operationId: getNextQuestion
       security:
         - CognitoAuthorizer: []
       parameters:
@@ -259,21 +260,23 @@ paths:
           schema:
             type: string
           example: "abc123def-456-789-ghi"
-        - name: topicId
+        - name: topic
           in: query
-          description: Filter by topic ID (e.g., "arrays", "graphs")
+          description: Topic filter (e.g., "Arrays", "Graphs"). If not provided, AI decides.
           required: false
           schema:
             type: string
             nullable: true
+          example: "Arrays"
         - name: difficulty
           in: query
-          description: Filter by difficulty level
+          description: Difficulty level filter. If not provided, AI decides.
           required: false
           schema:
             type: string
-            enum: [easy, medium, hard]
+            enum: [Easy, Medium, Hard]
             nullable: true
+          example: "Medium"
       responses:
         '200':
           description: Question retrieved successfully (single question object)
@@ -292,9 +295,15 @@ paths:
                     type: string
                     enum: [Easy, Medium, Hard]
                     description: Difficulty level
+                  topic:
+                    type: string
+                    description: Topic category
                   description:
                     type: string
                     description: Full question description/prompt
+                  template:
+                    type: string
+                    description: Starter code template
                   examples:
                     type: array
                     description: Example inputs and outputs
@@ -317,13 +326,19 @@ paths:
                     description: Hint suggestions
                     items:
                       type: string
+                  ai_reasoning:
+                    type: string
+                    nullable: true
+                    description: Optional explanation if AI made the selection
               examples:
                 singleQuestion:
                   value:
                     id: "1"
                     title: "Two Sum"
                     difficulty: "Easy"
+                    topic: "Arrays"
                     description: "Given an array of integers nums and an integer target..."
+                    template: "def twoSum(nums, target):\n    pass"
                     examples:
                       - input: "nums = [2,7,11,15], target = 9"
                         output: "[0,1]"
@@ -332,6 +347,7 @@ paths:
                       - "2 ≤ nums.length ≤ 10⁴"
                     hints:
                       - "Use a hash map..."
+                    ai_reasoning: "Since you struggled with Arrays recently, let's try a fundamental problem to build confidence."
         '400':
           description: Bad request - invalid query parameters
         '500':
@@ -351,115 +367,6 @@ paths:
           - X-Amz-Security-Token
         allowMethods:
           - GET
-          - OPTIONS
-        maxAge: 86400
-
-  /question/next:
-    post:
-      summary: Get next question based on user preferences
-      description: Retrieves a coding question based on user preferences. If topic or difficulty are null, AI will decide based on user history and performance.
-      operationId: getNextQuestion
-      security:
-        - CognitoAuthorizer: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - userId
-              properties:
-                userId:
-                  type: string
-                  description: Cognito user ID (sub claim from ID token). This is the unique, immutable user identifier.
-                  example: "abc123def-456-789-ghi"
-                topic:
-                  type: string
-                  nullable: true
-                  description: Topic filter (e.g., "Arrays", "Graphs"). Null means AI decides.
-                  example: "Arrays"
-                difficulty:
-                  type: string
-                  nullable: true
-                  enum: [Easy, Medium, Hard]
-                  description: Difficulty level filter. Null means AI decides.
-                  example: "Medium"
-      responses:
-        '200':
-          description: Question retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  qid:
-                    type: integer
-                    description: Question ID
-                    example: 105
-                  q_name:
-                    type: string
-                    description: Question title
-                    example: "Two Sum"
-                  difficulty:
-                    type: string
-                    enum: [Easy, Medium, Hard]
-                    description: Difficulty level
-                    example: "Easy"
-                  topic:
-                    type: string
-                    description: Topic category
-                    example: "Arrays"
-                  content:
-                    type: string
-                    description: Full question content in markdown format (from S3/Cache)
-                    example: "# Two Sum\n\nGiven an array of integers..."
-                  template:
-                    type: string
-                    description: Starter code template
-                    example: "def twoSum(nums, target):\n    pass"
-                  ai_reasoning:
-                    type: string
-                    nullable: true
-                    description: Optional explanation if AI made the selection
-                    example: "Since you struggled with Arrays recently, let's try a fundamental problem to build confidence."
-              examples:
-                withPreferences:
-                  value:
-                    qid: 105
-                    q_name: "Two Sum"
-                    difficulty: "Easy"
-                    topic: "Arrays"
-                    content: "# Two Sum\n\nGiven an array of integers nums and an integer target..."
-                    template: "def twoSum(nums, target):\n    pass"
-                withAIChoice:
-                  value:
-                    qid: 105
-                    q_name: "Two Sum"
-                    difficulty: "Easy"
-                    topic: "Arrays"
-                    content: "# Two Sum\n\nGiven an array of integers nums and an integer target..."
-                    template: "def twoSum(nums, target):\n    pass"
-                    ai_reasoning: "Since you struggled with Arrays recently, let's try a fundamental problem to build confidence."
-        '400':
-          description: Bad request - invalid input
-        '500':
-          description: Internal server error
-      # Lambda integration will be configured manually after import
-      # Integration type: AWS Lambda Function
-      # Use Lambda Proxy integration: Yes
-      # Lambda Function: questionNextFunction
-      x-amazon-apigateway-cors:
-        allowOrigins:
-          - "*"
-        allowHeaders:
-          - Content-Type
-          - X-Amz-Date
-          - Authorization
-          - X-Api-Key
-          - X-Amz-Security-Token
-        allowMethods:
-          - POST
           - OPTIONS
         maxAge: 86400
 

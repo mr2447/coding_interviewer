@@ -217,3 +217,27 @@ export const isAuthenticated = async () => {
   }
 };
 
+/**
+ * Get the current Cognito ID token (JWT).
+ * Returns null if no user/session is available.
+ */
+export const getIdToken = async () => {
+  const cognitoUser = await getCurrentUser();
+  if (!cognitoUser) {
+    return null;
+  }
+
+  const session = await new Promise((resolve, reject) => {
+    cognitoUser.getSession((err, sess) => {
+      if (err) reject(err);
+      else resolve(sess);
+    });
+  });
+
+  if (!session || !session.isValid()) {
+    return null;
+  }
+
+  return session.getIdToken().getJwtToken();
+};
+
