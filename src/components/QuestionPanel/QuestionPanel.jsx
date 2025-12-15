@@ -46,7 +46,7 @@ const QuestionPanel = ({ question, onNextQuestion, aiReasoning }) => {
           <button 
             className="next-question-button"
             onClick={onNextQuestion}
-            title="Get a new random question"
+            title="Get a new question"
           >
             Next Question
           </button>
