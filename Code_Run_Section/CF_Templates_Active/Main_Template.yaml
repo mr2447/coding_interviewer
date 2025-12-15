@@ -107,20 +107,19 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: rds-data:ExecuteStatement
-                Resource: !Ref RDSArn
-  # May or may not be necessary
-  #    Policies:
-  #      - PolicyName: InvokeApiGateway
-  #        PolicyDocument:
-  #          Version: "2012-10-17"
-  #          Statement:
-  #            - Effect: Allow
-  #              Action:
-  #                - execute-api:Invoke
-  #              Resource:
-  #                - arn:aws:execute-api:*:*:*/POST/*
-  #                - arn:aws:execute-api:*:*:*/GET/*
+                Action: ssm:GetParametersByPath
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt ConnectionsTable.Arn
+                  - !Sub "${ConnectionsTable.Arn}/index/*"
 
   CodeRunExecutionRole:
     Type: AWS::IAM::Role
@@ -208,14 +207,13 @@ Resources:
       Role: !GetAtt RelayResultsIAMRole.Arn
       Runtime: python3.12
       FunctionName: relay-results
+      VpcConfig:
+        SecurityGroupIds: [!GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup]
+        SubnetIds: [!GetAtt NetworkLayerStack.Outputs.PublicComputeSubnet]
       Environment:
         Variables:
-          DB_Host: !Ref DBHost
-          DB_User: !Ref DBUser
-          DB_Pass: !Ref DBPass
-          DB_Name: !Ref DBName
-          #May not be necessary
-#          APIGatewayInvokeURL: !Ref APIGatewayInvokeURL
+          WEBSOCKET_API_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${WebSocketStage.StageName}"
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
       Code:
         ZipFile: |
           def lambda_handler(event, context):
@@ -276,3 +274,122 @@ Resources:
               awslogs-group: !Ref LogGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: Code-Run-Container
+
+  #ToDo: Implement another task definition for running cpp code on image with cpp library
+
+  ######################## WebSocket Resources ########################
+  ConnectionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${AWS::StackName}-WebSocketConnections"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: connectionId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: connectionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: userId-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  WebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-WebSocketApi"
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+
+  WebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref WebSocketApi
+      StageName: prod
+      AutoDeploy: true
+
+  WebSocketHandlerIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: WebSocketHandlerPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt ConnectionsTable.Arn
+                  - !Sub "${ConnectionsTable.Arn}/index/*"
+
+  WebSocketHandler:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt WebSocketHandlerIAMRole.Arn
+      Runtime: python3.14
+      FunctionName: !Sub "${AWS::StackName}-websocket-handler"
+      Environment:
+        Variables:
+          CONNECTIONS_TABLE: !Ref ConnectionsTable
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+            return "Hello World!"
+      Handler: index.lambda_handler
+      Timeout: 15
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketHandler.Arn}/invocations"
+
+  DisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref WebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WebSocketHandler.Arn}/invocations"
+
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $connect
+      Target: !Sub "integrations/${ConnectIntegration}"
+
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref WebSocketApi
+      RouteKey: $disconnect
+      Target: !Sub "integrations/${DisconnectIntegration}"
+
+  WebSocketHandlerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WebSocketHandler
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/*"
+
+>>>>>>> 32cc34b (added websocket and updated userID in api spec.):CFtemplate.yaml

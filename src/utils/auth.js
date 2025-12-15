@@ -133,8 +133,30 @@ export const getUserAttributes = (cognitoUser) => {
 };
 
 /**
- * Get current user info (email and username)
- * @returns {Promise<{email: string, username: string}|null>}
+ * Decode JWT token to extract claims
+ * @param {string} token - JWT token
+ * @returns {Object} Decoded token payload
+ */
+const decodeJWT = (token) => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch (error) {
+    console.error('Error decoding JWT:', error);
+    return null;
+  }
+};
+
+/**
+ * Get current user info (email, username, and userId/sub)
+ * @returns {Promise<{email: string, username: string, userId: string}|null>}
  */
 export const getCurrentUserInfo = async () => {
   try {
@@ -144,9 +166,37 @@ export const getCurrentUserInfo = async () => {
     }
 
     const attributes = await getUserAttributes(cognitoUser);
+    const username = cognitoUser.getUsername();
+    const email = attributes.email || username;
+
+    // Extract userId (sub claim) from ID token - this is the unique, immutable user ID
+    // The 'sub' (subject) claim in Cognito tokens is the unique user identifier
+    let userId = username; // Fallback to username if we can't get the token
+    try {
+      // Get session to extract ID token
+      const session = await new Promise((resolve, reject) => {
+        cognitoUser.getSession((err, sess) => {
+          if (err) reject(err);
+          else resolve(sess);
+        });
+      });
+
+      if (session && session.isValid()) {
+        const idToken = session.getIdToken().getJwtToken();
+        const decodedToken = decodeJWT(idToken);
+        if (decodedToken && decodedToken.sub) {
+          userId = decodedToken.sub; // Use Cognito sub (subject) as userId
+        }
+      }
+    } catch (error) {
+      // If we can't get the token, fall back to username
+      console.warn('Could not extract userId from ID token, using username as fallback:', error);
+    }
+
     return {
-      email: attributes.email || cognitoUser.getUsername(),
-      username: cognitoUser.getUsername(),
+      email,
+      username,
+      userId, // This is the Cognito sub (unique user ID) if available, otherwise username
     };
   } catch (error) {
     console.error('Error getting current user info:', error);

@@ -7,7 +7,13 @@ import ChatBot from '../ChatBot/ChatBot';
 import QuestionSelectionForm from '../QuestionSelectionForm/QuestionSelectionForm';
 import { submitCode, fetchNextQuestion } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { getWebSocketClient } from '../../utils/websocket';
 import '../../App.css';
+import {
+  saveuestionState,
+  loadQuestionState,
+} from '../../utils/storage';
+import {useEffect} from 'react';
 
 function InterviewInterface() {
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -17,14 +23,112 @@ function InterviewInterface() {
   const [showQuestionForm, setShowQuestionForm] = useState(false);
   const [isLoadingQuestion, setIsLoadingQuestion] = useState(false);
   const [questionError, setQuestionError] = useState(null);
+  const [testResultsSummary, setTestResultsSummary] = useState(null);
   const chatBotResetKey = useRef(0);
+  const wsClientRef = useRef(null);
+  const pendingSubmissionRef = useRef(null); // Track pending submission to match with WebSocket results
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   
-  // Get userName from authenticated user
+  // Get userName and userId from authenticated user
+  // userId is the Cognito sub (unique identifier), userName is for display/API
   const userName = user?.username || user?.email || 'demo-user';
+  const userId = user?.userId || user?.username || user?.email || 'demo-user';
+  
+  // Transform testResults from submitCode response to test_results_summary format
+  const transformTestResults = (testResults) => {
+    if (!testResults || !testResults.tests) {
+      return null;
+    }
+    
+    const failedTest = testResults.tests.find(test => test.status === 'failed');
+    const allPassed = testResults.passed === testResults.total;
+    
+    if (allPassed) {
+      return {
+        status: 'Passed',
+        first_failed_test: null,
+      };
+    }
+    
+    // If we have a failed test, extract details
+    // Note: The current API may not provide input/expected/actual in the exact format,
+    // so we'll use what's available (error message) and structure it appropriately
+    return {
+      status: 'Failed',
+      first_failed_test: failedTest ? {
+        input: failedTest.input || 'N/A',
+        expected: failedTest.expected || 'N/A',
+        actual: failedTest.actual || failedTest.error || 'N/A',
+      } : null,
+    };
+  };
+
+  // Initialize WebSocket connection when component mounts
+  useEffect(() => {
+    const wsClient = getWebSocketClient();
+    wsClientRef.current = wsClient;
+
+    // Connect to WebSocket using userId (Cognito sub) for reliable identification
+    if (userId) {
+      wsClient.connect(userId).catch((error) => {
+        console.error('Failed to connect WebSocket:', error);
+        // Don't block UI if WebSocket fails - user can still submit code
+      });
+    }
+
+    // Listen for result messages
+    const unsubscribeResult = wsClient.on('result', (message) => {
+      console.log('Received result via WebSocket:', message);
+      
+      // Handle test results
+      if (message.testResults || message.Results) {
+        const testResults = message.testResults || JSON.parse(message.Results || '{}');
+        const summary = transformTestResults(testResults);
+        setTestResultsSummary(summary);
+
+        // Update submission status based on results
+        if (testResults.success || (testResults.passed === testResults.total && testResults.total > 0)) {
+          setSubmissionStatus('success');
+          // Show form after successful submission
+          setTimeout(() => {
+            setShowQuestionForm(true);
+            setTimeout(() => setSubmissionStatus(null), 2000);
+          }, 1000);
+        } else {
+          setSubmissionStatus('error');
+          setTimeout(() => setSubmissionStatus(null), 3000);
+        }
+      } else if (message.success !== undefined) {
+        // Handle simple success/failure message
+        if (message.success) {
+          setSubmissionStatus('success');
+          setTimeout(() => {
+            setShowQuestionForm(true);
+            setTimeout(() => setSubmissionStatus(null), 2000);
+          }, 1000);
+        } else {
+          setSubmissionStatus('error');
+          setTimeout(() => setSubmissionStatus(null), 3000);
+        }
+      }
+      
+      // Clear pending submission
+      pendingSubmissionRef.current = null;
+    });
+
+    // Cleanup on unmount
+    return () => {
+      unsubscribeResult();
+      wsClient.disconnect();
+    };
+    }, [userId]);
 
   const handleLogout = async () => {
+    // Disconnect WebSocket before logout
+    if (wsClientRef.current) {
+      wsClientRef.current.disconnect();
+    }
     await logout();
     navigate('/');
   };
@@ -36,11 +140,12 @@ function InterviewInterface() {
     setCode(''); // Reset code editor
     chatBotResetKey.current += 1; // Reset chatbot messages
     setSubmissionStatus(null); // Reset submission status
+    setTestResultsSummary(null); // Reset test results
     setShowQuestionForm(false); // Hide form while loading
 
     try {
       const question = await fetchNextQuestion({
-        userName,
+        userId: userId, // Use Cognito sub as userId
         topic: preferences?.topic || null,
         difficulty: preferences?.difficulty || null,
       });
@@ -93,30 +198,48 @@ function InterviewInterface() {
 
     setSubmissionStatus('pending');
     
+    // Store submission info for matching with WebSocket results
+    pendingSubmissionRef.current = {
+      questionId: currentQuestion.id,
+      timestamp: Date.now(),
+    };
+    
     try {
       // Call backend API through API Gateway
+      // This now returns immediately; results come via WebSocket
       const result = await submitCode({
         code: submittedCode,
         language,
         questionId: currentQuestion.id,
-        userId: userName,
+        userId: userId, // Use userId (Cognito sub) for consistency
       });
 
-      if (result.success) {
-        setSubmissionStatus('success');
-        // Show form after successful submission
-        setTimeout(() => {
-          setShowQuestionForm(true);
-          // Clear success message after a moment
-          setTimeout(() => setSubmissionStatus(null), 2000);
-        }, 1000);
+      // If the API returns results immediately (fallback), handle them
+      // Otherwise, wait for WebSocket message
+      if (result.testResults) {
+        const summary = transformTestResults(result.testResults);
+        setTestResultsSummary(summary);
+
+        if (result.success) {
+          setSubmissionStatus('success');
+          setTimeout(() => {
+            setShowQuestionForm(true);
+            setTimeout(() => setSubmissionStatus(null), 2000);
+          }, 1000);
+        } else {
+          setSubmissionStatus('error');
+          setTimeout(() => setSubmissionStatus(null), 3000);
+        }
+        pendingSubmissionRef.current = null;
       } else {
-        setSubmissionStatus('error');
-        setTimeout(() => setSubmissionStatus(null), 3000);
+        // Results will come via WebSocket - submission status will be updated there
+        // Keep status as 'pending' until WebSocket message arrives
       }
     } catch (error) {
       console.error('Submission error:', error);
       setSubmissionStatus('error');
+      setTestResultsSummary(null);
+      pendingSubmissionRef.current = null;
       setTimeout(() => setSubmissionStatus(null), 3000);
     }
   };
@@ -288,6 +411,8 @@ function InterviewInterface() {
               codeContent={code}
               questionId={currentQuestion?.id}
               questionPrompt={currentQuestion?.description}
+              userId={userId}
+              testResultsSummary={testResultsSummary}
               key={chatBotResetKey.current}
             />
           }

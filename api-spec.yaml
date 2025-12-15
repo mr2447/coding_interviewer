@@ -13,12 +13,25 @@ servers:
       stage:
         default: prod
 
+components:
+  securitySchemes:
+    CognitoAuthorizer:
+      type: apiKey
+      name: Authorization
+      in: header
+      description: |
+        AWS Cognito JWT token. Format: "Bearer <idToken>"
+        The token should contain the user's 'sub' claim which is used as userId.
+        Example: "Bearer eyJraWQiOiJcL0..."
+
 paths:
   /submit:
     post:
       summary: Submit code for evaluation
       description: Submits user's code solution for a coding question and returns test results
       operationId: submitCode
+      security:
+        - CognitoAuthorizer: []
       requestBody:
         required: true
         content:
@@ -52,8 +65,8 @@ paths:
                   example: "2024-01-15T10:30:00.000Z"
                 userId:
                   type: string
-                  description: ID of the user submitting the code
-                  example: "user-123"
+                  description: Cognito user ID (sub claim from ID token). This is the unique, immutable user identifier.
+                  example: "abc123def-456-789-ghi"
       responses:
         '200':
           description: Submission processed successfully
@@ -123,11 +136,13 @@ paths:
           - OPTIONS
         maxAge: 86400
 
-  /hints:
+  /hint:
     post:
       summary: Generate AI hint for code
-      description: Generates an AI-powered hint based on the user's code and question
+      description: Generates an AI-powered hint based on the user's code, question, and test results. Uses thread_id to maintain conversation state via OpenAI chat history.
       operationId: generateHint
+      security:
+        - CognitoAuthorizer: []
       requestBody:
         required: true
         content:
@@ -135,27 +150,62 @@ paths:
             schema:
               type: object
               required:
-                - code
-                - questionId
-                - questionPrompt
-                - conversationId
+                - userId
+                - qid
+                - user_code
               properties:
-                code:
+                userId:
                   type: string
-                  description: The user's current code
-                  example: "function solution(nums, target) {\n    // Write your code here\n}"
-                questionId:
+                  description: Cognito user ID (sub claim from ID token). This is the unique, immutable user identifier.
+                  example: "abc123def-456-789-ghi"
+                qid:
+                  type: integer
+                  description: Question ID
+                  example: 105
+                thread_id:
                   type: string
-                  description: ID of the current question (numeric string like "1" or UUID)
-                  example: "1"
-                questionPrompt:
+                  nullable: true
+                  description: Conversation state identifier from localStorage. Send NULL if this is the first hint request for this specific question.
+                  example: "thread_abc123"
+                user_code:
                   type: string
-                  description: The full question description/prompt text
-                  example: "Given an array of integers nums and an integer target..."
-                conversationId:
+                  description: The current code in Monaco editor
+                  example: "def twoSum(nums, target):\n    for i in range(len(nums)):\n        for j in range(i+1, len(nums)):\n            if nums[i] + nums[j] == target:\n                return [i, j]\n    return []"
+                test_results_summary:
+                  type: object
+                  nullable: true
+                  description: Execution history from test run. Send NULL if the user has not clicked 'Run' yet.
+                  properties:
+                    status:
+                      type: string
+                      enum: [Passed, Failed]
+                      description: Overall test status
+                      example: "Failed"
+                    first_failed_test:
+                      type: object
+                      nullable: true
+                      description: Details of the first failed test case
+                      properties:
+                        input:
+                          type: string
+                          example: "[3,3], 6"
+                        expected:
+                          type: string
+                          example: "[0,1]"
+                        actual:
+                          type: string
+                          example: "[]"
+                  example:
+                    status: "Failed"
+                    first_failed_test:
+                      input: "[3,3], 6"
+                      expected: "[0,1]"
+                      actual: "[]"
+                question_desc:
                   type: string
-                  description: Unique identifier for this conversation/hint session (used by OpenAI for chat history)
-                  example: "1712345678901-abc123"
+                  nullable: true
+                  description: Full question description text. Send the full text ONLY if 'thread_id' is null. Otherwise send null.
+                  example: "Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.\n\nYou may assume that each input would have exactly one solution, and you may not use the same element twice."
       responses:
         '200':
           description: Hint generated successfully
@@ -164,23 +214,14 @@ paths:
               schema:
                 type: object
                 properties:
-                  success:
-                    type: boolean
-                    example: true
                   hint:
                     type: string
                     description: The generated hint text
-                    example: "Consider using a hash map to store values as you iterate."
-                  error:
-                    type: object
-                    description: Error details if hint generation failed
-                    properties:
-                      type:
-                        type: string
-                      message:
-                        type: string
-                      details:
-                        type: string
+                    example: "It looks like your loop isn't checking the last element correctly. Have you considered the range bounds?"
+                  thread_id:
+                    type: string
+                    description: Conversation thread identifier. Frontend MUST save this to LocalStorage for subsequent requests.
+                    example: "thread_abc123"
         '400':
           description: Bad request - invalid input
         '500':
@@ -208,7 +249,16 @@ paths:
       summary: Fetch coding questions
       description: Retrieves coding interview questions, optionally filtered by topic and difficulty
       operationId: fetchQuestion
+      security:
+        - CognitoAuthorizer: []
       parameters:
+        - name: userId
+          in: query
+          description: Cognito user ID (sub claim from ID token). This is the unique, immutable user identifier.
+          required: true
+          schema:
+            type: string
+          example: "abc123def-456-789-ghi"
         - name: random
           in: query
           description: If true, return a single random question
@@ -316,6 +366,8 @@ paths:
       summary: Get next question based on user preferences
       description: Retrieves a coding question based on user preferences. If topic or difficulty are null, AI will decide based on user history and performance.
       operationId: getNextQuestion
+      security:
+        - CognitoAuthorizer: []
       requestBody:
         required: true
         content:
@@ -323,12 +375,12 @@ paths:
             schema:
               type: object
               required:
-                - user_name
+                - userId
               properties:
-                user_name:
+                userId:
                   type: string
-                  description: Name/ID of the user
-                  example: "Jesse"
+                  description: Cognito user ID (sub claim from ID token). This is the unique, immutable user identifier.
+                  example: "abc123def-456-789-ghi"
                 topic:
                   type: string
                   nullable: true

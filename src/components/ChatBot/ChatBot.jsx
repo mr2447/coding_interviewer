@@ -4,15 +4,30 @@ import { mockOpenAIResponse } from '../../utils/mockOpenAI';
 import { generateHint } from '../../utils/api';
 import './ChatBot.css';
 
-const ChatBot = ({ codeContent, questionId, questionPrompt }) => {
+const ChatBot = ({ codeContent, questionId, questionPrompt, userId, testResultsSummary }) => {
   const [hints, setHints] = useState([]); // Store only generated hints
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef(null);
-  // A simple per-session conversation identifier; backend/OpenAI can use this
-  // to maintain chat history without sending full previousHints.
-  const conversationIdRef = useRef(
-    `${Date.now()}-${Math.random().toString(36).slice(2)}`
-  );
+  
+  // Get thread_id from localStorage (per question)
+  const getThreadId = () => {
+    if (!questionId) return null;
+    const key = `hint_thread_${questionId}`;
+    return localStorage.getItem(key);
+  };
+
+  // Save thread_id to localStorage (per question)
+  const saveThreadId = (threadId) => {
+    if (!questionId || !threadId) return;
+    const key = `hint_thread_${questionId}`;
+    localStorage.setItem(key, threadId);
+  };
+
+  // Clear thread_id when question changes
+  useEffect(() => {
+    // Reset hints when question changes
+    setHints([]);
+  }, [questionId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -28,18 +43,28 @@ const ChatBot = ({ codeContent, questionId, questionPrompt }) => {
     setIsLoading(true);
 
     try {
-      // Collect all previous hints into a string
+      const threadId = getThreadId();
+      const isFirstHint = !threadId;
+      
+      // Collect all previous hints into a string for fallback mock
       const previousHints = hints.map(hint => hint.content).join('\n\n');
 
       let response;
       try {
-        // Prefer calling the real backend hint API
+        // Call the real backend hint API with new format
         response = await generateHint({
-          code: codeContent,
-          questionId,
-          questionPrompt,
-          conversationId: conversationIdRef.current,
+          userId: userId || 'demo-user',
+          qid: parseInt(questionId, 10),
+          threadId: threadId,
+          userCode: codeContent || '',
+          testResultsSummary: testResultsSummary,
+          questionDesc: isFirstHint ? questionPrompt : null, // Only send full description on first hint
         });
+        
+        // Save the returned thread_id to localStorage
+        if (response.threadId) {
+          saveThreadId(response.threadId);
+        }
       } catch (apiError) {
         console.warn(
           'Hint API call failed, falling back to local mock hints:',

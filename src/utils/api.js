@@ -72,31 +72,36 @@ export const submitCode = async ({ code, questionId, language, userId }) => {
  *
  * Request body (to backend Lambda):
  * {
- *   code: string,
- *   questionId: number | string,
- *   questionPrompt: string,
- *   conversationId: string, // used by backend/OpenAI to maintain chat state
- *   // userId should be derived from Cognito JWT on backend, not sent here
+ *   userId: string,             // Cognito sub (unique user identifier)
+ *   qid: number,
+ *   thread_id: string | null,  // From localStorage, null if first hint
+ *   user_code: string,          // Current code in Monaco
+ *   test_results_summary: object | null,  // From test execution, null if not run
+ *   question_desc: string | null  // Full text only if thread_id is null
  * }
  *
  * Expects backend Lambda to return:
- * { success: boolean, hint?: string, error?: {...} }
- * Returns an object shaped like a chat message: { role, content }.
+ * { hint: string, thread_id: string }
+ * Returns an object shaped like a chat message: { role, content, thread_id }.
  */
 export const generateHint = async ({
-  code,
-  questionId,
-  questionPrompt,
-  conversationId,
+  userId,
+  qid,
+  threadId,
+  userCode,
+  testResultsSummary,
+  questionDesc,
 }) => {
   const payload = {
-    code,
-    questionId,
-    questionPrompt,
-    conversationId,
+    userId: userId,
+    qid: qid,
+    thread_id: threadId || null,
+    user_code: userCode,
+    test_results_summary: testResultsSummary || null,
+    question_desc: questionDesc || null,
   };
 
-  const response = await fetch(buildUrl('/hints'), {
+  const response = await fetch(buildUrl('/hint'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -107,15 +112,14 @@ export const generateHint = async ({
 
   const data = await handleResponse(response);
 
-  if (!data.success || !data.hint) {
-    const message =
-      data?.error?.message || 'Hint generation failed without a hint message.';
-    throw new Error(message);
+  if (!data.hint) {
+    throw new Error('Hint generation failed: no hint returned.');
   }
 
   return {
     role: 'assistant',
     content: data.hint,
+    threadId: data.thread_id, // Frontend must save this to localStorage
   };
 };
 
@@ -126,7 +130,7 @@ export const generateHint = async ({
  * 
  * Request body:
  * {
- *   user_name: string,
+ *   userId: string,            // Cognito sub (unique user identifier)
  *   topic: string | null,      // Optional, null means AI decides
  *   difficulty: string | null  // Optional, null means AI decides
  * }
@@ -142,9 +146,9 @@ export const generateHint = async ({
  *   ai_reasoning?: string      // Optional explanation if AI made the choice
  * }
  */
-export const fetchNextQuestion = async ({ userName, topic = null, difficulty = null }) => {
+export const fetchNextQuestion = async ({ userId, topic = null, difficulty = null }) => {
   const payload = {
-    user_name: userName,
+    userId: userId,
     topic: topic || null,
     difficulty: difficulty || null,
   };
