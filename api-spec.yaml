@@ -259,13 +259,6 @@ paths:
           schema:
             type: string
           example: "abc123def-456-789-ghi"
-        - name: random
-          in: query
-          description: If true, return a single random question
-          required: false
-          schema:
-            type: boolean
-            default: true
         - name: topicId
           in: query
           description: Filter by topic ID (e.g., "arrays", "graphs")
