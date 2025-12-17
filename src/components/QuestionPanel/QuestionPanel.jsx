@@ -62,24 +62,43 @@ const QuestionPanel = ({ question, onNextQuestion, aiReasoning }) => {
 
         <div className="question-examples">
           <h3>Examples:</h3>
-          {question.examples.map((example, idx) => (
-            <div key={idx} className="example">
-              <div className="example-number">Example {idx + 1}:</div>
-              <div className="example-content">
-                <div className="example-input">
-                  <strong>Input:</strong> {example.input}
-                </div>
-                <div className="example-output">
-                  <strong>Output:</strong> {example.output}
-                </div>
-                {example.explanation && (
-                  <div className="example-explanation">
-                    <strong>Explanation:</strong> {example.explanation}
+          {question.examples.map((example, idx) => {
+            // Safely convert input and output to strings to prevent React error #31
+            const formatExampleValue = (value) => {
+              if (typeof value === 'string') return value;
+              if (typeof value === 'object' && value !== null) {
+                // If it's an object like {nums: [...], target: 9}, format it nicely
+                try {
+                  return JSON.stringify(value, null, 2);
+                } catch {
+                  return String(value);
+                }
+              }
+              return String(value || '');
+            };
+
+            const inputStr = formatExampleValue(example.input);
+            const outputStr = formatExampleValue(example.output);
+
+            return (
+              <div key={idx} className="example">
+                <div className="example-number">Example {idx + 1}:</div>
+                <div className="example-content">
+                  <div className="example-input">
+                    <strong>Input:</strong> {inputStr}
                   </div>
-                )}
+                  <div className="example-output">
+                    <strong>Output:</strong> {outputStr}
+                  </div>
+                  {example.explanation && (
+                    <div className="example-explanation">
+                      <strong>Explanation:</strong> {example.explanation}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="question-constraints">

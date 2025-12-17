@@ -79,14 +79,38 @@ const QuestionSelectionForm = ({ onSubmit, onCancel, isLoading, userName, error 
               className="btn-ai-decide"
               disabled={isLoading}
             >
-              {isLoading ? 'Loading...' : 'Let AI Decide'}
+              {isLoading ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="loading-spinner-small" style={{
+                    width: '16px',
+                    height: '16px',
+                    border: '2px solid #9ca3af',
+                    borderTop: '2px solid #374151',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }}></div>
+                  Loading...
+                </span>
+              ) : 'Let AI Decide'}
             </button>
             <button
               type="submit"
               className="btn-submit"
               disabled={isLoading}
             >
-              {isLoading ? 'Loading...' : 'Get Question'}
+              {isLoading ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="loading-spinner-small" style={{
+                    width: '16px',
+                    height: '16px',
+                    border: '2px solid rgba(255, 255, 255, 0.5)',
+                    borderTop: '2px solid white',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite'
+                  }}></div>
+                  Loading...
+                </span>
+              ) : 'Get Question'}
             </button>
           </div>
         </form>

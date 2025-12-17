@@ -160,7 +160,10 @@ export const generateHint = async ({
  *   difficulty: string,
  *   topic: string,
  *   description: string,       // Full question description
- *   template: string,          // Starter code
+ *   template: {                 // Starter code templates for each language
+ *     python: string,
+ *     cpp: string
+ *   },
  *   examples: array,
  *   constraints: array,
  *   hints: array,
@@ -192,6 +195,27 @@ export const fetchNextQuestion = async ({ userId, topic = null, difficulty = nul
 
   const data = await handleResponse(response);
   
+  // Normalize examples to ensure input/output are always strings
+  const normalizeExamples = (examples) => {
+    if (!Array.isArray(examples)) return [];
+    return examples.map(example => {
+      const normalized = { ...example };
+      // Ensure input is a string
+      if (normalized.input && typeof normalized.input !== 'string') {
+        normalized.input = typeof normalized.input === 'object'
+          ? JSON.stringify(normalized.input, null, 2)
+          : String(normalized.input);
+      }
+      // Ensure output is a string
+      if (normalized.output && typeof normalized.output !== 'string') {
+        normalized.output = typeof normalized.output === 'object'
+          ? JSON.stringify(normalized.output, null, 2)
+          : String(normalized.output);
+      }
+      return normalized;
+    });
+  };
+  
   // Transform the response to match the expected question format
   return {
     id: data.id?.toString(),
@@ -199,9 +223,9 @@ export const fetchNextQuestion = async ({ userId, topic = null, difficulty = nul
     difficulty: data.difficulty || 'Easy',
     topic: data.topic,
     description: data.description,
-    template: data.template || '',
+    template: data.template || { python: '', cpp: '' },
     aiReasoning: data.ai_reasoning,
-    examples: data.examples || [],
+    examples: normalizeExamples(data.examples),
     constraints: data.constraints || [],
     hints: data.hints || [],
   };

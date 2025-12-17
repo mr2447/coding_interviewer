@@ -4,6 +4,7 @@ import Layout from '../Layout/Layout';
 import QuestionPanel from '../QuestionPanel/QuestionPanel';
 import CodeEditor from '../CodeEditor/CodeEditor';
 import ChatBot from '../ChatBot/ChatBot';
+import TestResults from '../TestResults/TestResults';
 import QuestionSelectionForm from '../QuestionSelectionForm/QuestionSelectionForm';
 import { submitCode, fetchNextQuestion } from '../../utils/api';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,12 +19,14 @@ import {useEffect} from 'react';
 function InterviewInterface() {
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [code, setCode] = useState('');
-  const [language, setLanguage] = useState('javascript');
+  const [language, setLanguage] = useState('python');
+  const [templates, setTemplates] = useState({ python: '', cpp: '' });
   const [submissionStatus, setSubmissionStatus] = useState(null);
   const [showQuestionForm, setShowQuestionForm] = useState(false);
   const [isLoadingQuestion, setIsLoadingQuestion] = useState(false);
   const [questionError, setQuestionError] = useState(null);
   const [testResultsSummary, setTestResultsSummary] = useState(null);
+  const [testResults, setTestResults] = useState(null);
   const chatBotResetKey = useRef(0);
   const wsClientRef = useRef(null);
   const pendingSubmissionRef = useRef(null); // Track pending submission to match with WebSocket results
@@ -86,6 +89,7 @@ function InterviewInterface() {
         const testResults = message.testResults || JSON.parse(message.Results || '{}');
         const summary = transformTestResults(testResults);
         setTestResultsSummary(summary);
+        setTestResults(testResults); // Store full test results for display
 
         // Update submission status based on results
         if (testResults.success || (testResults.passed === testResults.total && testResults.total > 0)) {
@@ -140,7 +144,8 @@ function InterviewInterface() {
     setCode(''); // Reset code editor
     chatBotResetKey.current += 1; // Reset chatbot messages
     setSubmissionStatus(null); // Reset submission status
-    setTestResultsSummary(null); // Reset test results
+    setTestResultsSummary(null); // Reset test results summary
+    setTestResults(null); // Reset full test results
     setShowQuestionForm(false); // Hide form while loading
 
     try {
@@ -151,9 +156,18 @@ function InterviewInterface() {
       });
       setCurrentQuestion(question);
       
-      // Set initial code from template if provided
-      if (question.template) {
-        setCode(question.template);
+      // Store all templates in state
+      if (question.template && typeof question.template === 'object') {
+        setTemplates({
+          python: question.template.python || '',
+          cpp: question.template.cpp || '',
+        });
+        // Set initial code based on current language
+        setCode(question.template[language] || '');
+      } else {
+        // Fallback: if template is not an object, reset templates
+        setTemplates({ python: '', cpp: '' });
+        setCode('');
       }
     } catch (error) {
       console.error('Failed to fetch question from API:', error);
@@ -182,7 +196,8 @@ function InterviewInterface() {
 
   const handleLanguageChange = (newLanguage) => {
     setLanguage(newLanguage);
-    setCode(''); // Reset code when language changes
+    // Switch to the template for the new language (no API call!)
+    setCode(templates[newLanguage] || '');
   };
 
   const handleSubmit = async (submittedCode) => {
@@ -219,6 +234,7 @@ function InterviewInterface() {
       if (result.testResults) {
         const summary = transformTestResults(result.testResults);
         setTestResultsSummary(summary);
+        setTestResults(result.testResults); // Store full test results for display
 
         if (result.success) {
           setSubmissionStatus('success');
@@ -239,13 +255,14 @@ function InterviewInterface() {
       console.error('Submission error:', error);
       setSubmissionStatus('error');
       setTestResultsSummary(null);
+      setTestResults(null);
       pendingSubmissionRef.current = null;
       setTimeout(() => setSubmissionStatus(null), 3000);
     }
   };
 
-  // Show "Start Interview" button if no question is loaded yet
-  if (!currentQuestion && !showQuestionForm) {
+  // Show "Start Interview" button if no question is loaded yet and not loading
+  if (!currentQuestion && !showQuestionForm && !isLoadingQuestion) {
     return (
       <div className="app">
         <div style={{
@@ -391,7 +408,47 @@ function InterviewInterface() {
         />
       )}
       
-      {!showQuestionForm && currentQuestion && (
+      {/* Loading overlay when fetching question */}
+      {!showQuestionForm && isLoadingQuestion && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          backdropFilter: 'blur(4px)'
+        }}>
+          <div style={{
+            backgroundColor: '#ffffff',
+            borderRadius: '12px',
+            padding: '32px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '16px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            <div className="loading-spinner" style={{
+              width: '48px',
+              height: '48px',
+              border: '4px solid #f3f4f6',
+              borderTop: '4px solid #3b82f6',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }}></div>
+            <p style={{ margin: 0, fontSize: '16px', color: '#374151', fontWeight: '500' }}>
+              Fetching question...
+            </p>
+          </div>
+        </div>
+      )}
+      
+      {!showQuestionForm && currentQuestion && !isLoadingQuestion && (
         <Layout
           leftPanel={
             <QuestionPanel 
@@ -401,14 +458,19 @@ function InterviewInterface() {
             />
           }
           middlePanel={
-            <CodeEditor
-              code={code}
-              onChange={handleCodeChange}
-              language={language}
-              onLanguageChange={handleLanguageChange}
-              onSubmit={handleSubmit}
-              submissionStatus={submissionStatus}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <CodeEditor
+                  code={code}
+                  onChange={handleCodeChange}
+                  language={language}
+                  onLanguageChange={handleLanguageChange}
+                  onSubmit={handleSubmit}
+                  submissionStatus={submissionStatus}
+                />
+              </div>
+              <TestResults testResults={testResults} />
+            </div>
           }
           rightPanel={
             <ChatBot 

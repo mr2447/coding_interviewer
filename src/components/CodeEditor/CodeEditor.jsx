@@ -6,19 +6,19 @@ const CodeEditor = ({ code, onChange, language, onLanguageChange, onSubmit, subm
   const [theme, setTheme] = useState('vs-dark');
 
   const defaultCode = {
-    javascript: `function solution(nums, target) {
-    // Write your code here
-    
-}`,
     python: `def solution(nums, target):
     # Write your code here
     pass`,
-    java: `class Solution {
-    public int[] solution(int[] nums, int target) {
+    cpp: `#include <vector>
+using namespace std;
+
+class Solution {
+public:
+    vector<int> solution(vector<int>& nums, int target) {
         // Write your code here
-        return new int[]{};
+        return {};
     }
-}`
+};`
   };
 
   const handleEditorChange = (value) => {
@@ -72,9 +72,8 @@ const CodeEditor = ({ code, onChange, language, onLanguageChange, onSubmit, subm
             onChange={(e) => onLanguageChange(e.target.value)}
             className="language-selector"
           >
-            <option value="javascript">JavaScript</option>
             <option value="python">Python</option>
-            <option value="java">Java</option>
+            <option value="cpp">C++</option>
           </select>
         </div>
         <div className="toolbar-right">
@@ -100,7 +99,7 @@ const CodeEditor = ({ code, onChange, language, onLanguageChange, onSubmit, subm
           height="100%"
           language={language}
           theme={theme}
-          value={code || defaultCode[language]}
+          value={code || defaultCode[language] || ''}
           onChange={handleEditorChange}
           options={{
             minimap: { enabled: false },

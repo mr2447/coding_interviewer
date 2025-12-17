@@ -56,9 +56,9 @@ paths:
                   example: "1"
                 language:
                   type: string
-                  enum: [javascript, python, java]
+                  enum: [python, cpp]
                   description: Programming language of the code
-                  example: javascript
+                  example: python
                 timestamp:
                   type: string
                   format: date-time
@@ -302,8 +302,17 @@ paths:
                     type: string
                     description: Full question description/prompt
                   template:
-                    type: string
-                    description: Starter code template
+                    type: object
+                    description: Starter code templates for each supported language
+                    properties:
+                      python:
+                        type: string
+                        description: Python starter code template
+                        example: "def solution(nums, target):\n    # Write your code here\n    pass"
+                      cpp:
+                        type: string
+                        description: C++ starter code template
+                        example: "#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    vector<int> solution(vector<int>& nums, int target) {\n        // Write your code here\n        return {};\n    }\n};"
                   examples:
                     type: array
                     description: Example inputs and outputs
@@ -338,7 +347,9 @@ paths:
                     difficulty: "Easy"
                     topic: "Arrays"
                     description: "Given an array of integers nums and an integer target..."
-                    template: "def twoSum(nums, target):\n    pass"
+                    template:
+                      python: "def twoSum(nums, target):\n    # Write your code here\n    pass"
+                      cpp: "#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    vector<int> twoSum(vector<int>& nums, int target) {\n        // Write your code here\n        return {};\n    }\n};"
                     examples:
                       - input: "nums = [2,7,11,15], target = 9"
                         output: "[0,1]"
