@@ -26,6 +26,10 @@ Parameters:
     Type: String
     Description: S3 key prefix for Lambda function code (e.g., 'lambda-functions/')
     Default: lambda-functions/
+  UserPoolId:
+    Type: String
+    Description: Cognito User Pool ID (e.g., us-east-2_xxxxx)
+    Default: us-east-2_jSbGE8cJ3
 
 Resources:
   # Note: LambdaCodeS3Bucket parameter references an existing S3 bucket
@@ -175,6 +179,22 @@ Resources:
                 Action: lambda:InvokeFunction
                 Resource: !GetAtt RelayResults.Arn
 
+  CognitoPostConfirmationIAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      # Note: No inline policies needed - psycopg2 uses direct connection (username/password)
+      # RDS Data API permissions not required for direct PostgreSQL connections
+
 #########################Lambdas###############
   ReceiveSubmission:
     Type: AWS::Lambda::Function
@@ -244,6 +264,40 @@ Resources:
       Handler: index.lambda_handler
       #Timeout of 30 seconds chosen due to latency concern of RDS and DynamoDB
       Timeout: 30
+
+  CognitoPostConfirmation:
+    Type: AWS::Lambda::Function
+    Properties:
+      Role: !GetAtt CognitoPostConfirmationIAMRole.Arn
+      Runtime: python3.12
+      FunctionName: cognito-post-confirmation
+      Environment:
+        Variables:
+          DB_Host: !Ref DBHost
+          DB_User: !Ref DBUser
+          DB_Pass: !Ref DBPass
+          DB_Name: !Ref DBName
+          DB_Port: !Ref DBPort
+      Code:
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Sub "${LambdaCodeS3KeyPrefix}cognito-post-confirmation.zip"
+      Layers:
+        - !Ref RDSLayerArn
+      Handler: index.lambda_handler
+      Timeout: 15
+      VpcConfig:
+        SubnetIds:
+          - !GetAtt NetworkLayerStack.Outputs.PrivateSubnet1
+        SecurityGroupIds:
+          - !GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup
+
+  CognitoPostConfirmationInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CognitoPostConfirmation
+      Principal: cognito-idp.amazonaws.com
+      Action: lambda:InvokeFunction
+      SourceArn: !Sub "arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/${UserPoolId}"
 
 ###########Other Resources###########
   CodeQueue:
