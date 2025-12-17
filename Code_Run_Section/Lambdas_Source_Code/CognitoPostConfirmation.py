@@ -41,7 +41,12 @@ def lambda_handler(event, context):
         # Extract user information from Cognito event
         user_attributes = event.get('request', {}).get('userAttributes', {})
         user_id = user_attributes.get('sub')  # Cognito 'sub' claim - this is the unique user ID
-        username = user_attributes.get('preferred_username') or user_attributes.get('cognito:username', '')
+        username = (
+            user_attributes.get("preferred_username")
+            or event.get("userName")
+            or user_attributes.get("email")
+            or ""
+        )
         
         if not user_id:
             logger.error("No 'sub' attribute found in event. Cannot create user record.")
