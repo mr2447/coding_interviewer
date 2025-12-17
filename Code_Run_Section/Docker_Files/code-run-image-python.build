@@ -1,15 +1,13 @@
-FROM python:3.14-slim
-
-#Install compilers
-RUN apt-get update && apt-get install -y \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+#Import OS and python dependencies
+FROM python:3.12-slim
 
 #Install AWS SDK
-RUN pip install boto3
+RUN pip install --no-cache-dir boto3
 
 WORKDIR /app
 
-COPY code_runner.py .
+#Add source code for file that tests user submissions
+COPY python_code_runner.py .
 
-ENTRYPOINT ["python3", "code_runner.py"]
+#Point container starts, calls code_runner.py, and terminates.
+ENTRYPOINT ["python3", "python_code_runner.py"]

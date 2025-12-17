@@ -30,8 +30,6 @@ Parameters:
     Type: String
     Description: Cognito User Pool ID (e.g., us-east-2_xxxxx)
     Default: us-east-2_jSbGE8cJ3
-#  APIGatewayInvokeURL:
-#    Type: String
 
 Resources:
   # Note: LambdaCodeS3Bucket parameter references an existing S3 bucket
@@ -98,7 +96,9 @@ Resources:
                 Resource: !Ref RDSArn
               - Effect: Allow
                 Action: ecs:RunTask
-                Resource: !Ref CodeRunTaskDefinition
+                Resource:
+                  - !Ref CodeRunTaskDefinitionPython
+                  - !Ref CodeRunTaskDefinitionCpp
               - Effect: Allow
                 Action: iam:PassRole
                 Resource:
@@ -131,8 +131,7 @@ Resources:
                   - execute-api:ManageConnections
                   - execute-api:Invoke
                 # For API Gateway Management API post_to_connection, need @connections/* path
-                # Try explicit stage name 'prod' as well as wildcards
-                Resource: 
+                Resource:
                   - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/prod/@connections/*"
                   - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/@connections/*"
                   - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
@@ -144,6 +143,9 @@ Resources:
                 Resource:
                   - !GetAtt ConnectionsTable.Arn
                   - !Sub "${ConnectionsTable.Arn}/index/*"
+              - Effect: Allow
+                Action: rds-data:ExecuteStatement
+                Resource: !Ref RDSArn
 
   CodeRunExecutionRole:
     Type: AWS::IAM::Role
@@ -221,9 +223,10 @@ Resources:
           Subnets: !GetAtt NetworkLayerStack.Outputs.PrivateSubnet1
           SecurityGroup: !GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup
           Cluster: !Ref CodeRunCluster
-          TaskDef: !Ref CodeRunTaskDefinition
+          TaskDefPython: !Ref CodeRunTaskDefinitionPython
+          TaskDefCpp: !Ref CodeRunTaskDefinitionCpp
           ContainerName: "code-run-image-python"
-          RelayResults: !Ref RelayResults
+          TargetLambda: !Ref RelayResults
           #Variables for DB queries
           DB_Host: !Ref DBHost
           DB_User: !Ref DBUser
@@ -245,17 +248,22 @@ Resources:
       Role: !GetAtt RelayResultsIAMRole.Arn
       Runtime: python3.12
       FunctionName: relay-results
-      # Removed VpcConfig - Lambda doesn't need VPC access for DynamoDB/API Gateway
       Environment:
         Variables:
           WEBSOCKET_API_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
           CONNECTIONS_TABLE: !Ref ConnectionsTable
+          DB_Host: !Ref DBHost
+          DB_User: !Ref DBUser
+          DB_Pass: !Ref DBPass
+          DB_Name: !Ref DBName
       Code:
         S3Bucket: !Ref LambdaCodeS3Bucket
         S3Key: !Sub "${LambdaCodeS3KeyPrefix}relay-results.zip"
-      # Removed Layers (RDSLayer) - not needed for DynamoDB/API Gateway access
+      Layers:
+        - !Ref RDSLayerArn
       Handler: index.lambda_handler
-      Timeout: 30  # Increased timeout for DynamoDB queries
+      #Timeout of 30 seconds chosen due to latency concern of RDS and DynamoDB
+      Timeout: 30
 
   CognitoPostConfirmation:
     Type: AWS::Lambda::Function
@@ -321,7 +329,7 @@ Resources:
     Properties:
       LogGroupName: !Sub "/ecs/${AWS::StackName}"
 
-  CodeRunTaskDefinition:
+  CodeRunTaskDefinitionPython:
     Type: AWS::ECS::TaskDefinition
     Properties:
       ExecutionRoleArn: !GetAtt CodeRunExecutionRole.Arn
@@ -343,7 +351,27 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: Code-Run-Container
 
-  #ToDo: Implement another task definition for running cpp code on image with cpp library
+  CodeRunTaskDefinitionCpp:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      ExecutionRoleArn: !GetAtt CodeRunExecutionRole.Arn
+      TaskRoleArn: !GetAtt CodeRunTaskRole.Arn
+      Cpu: "256"
+      Memory: "1024"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: code-run-image-cpp
+          Image: 346225466066.dkr.ecr.us-east-2.amazonaws.com/code-run-image-cpp:latest
+          Essential: true
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: Code-Run-Container
+  #Note: A different CodeRunTaskDefinition is needed for every support language
 
   ######################## WebSocket Resources ########################
   ConnectionsTable:
@@ -465,13 +493,13 @@ Outputs:
     Value: !Sub "wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
     Export:
       Name: !Sub "${AWS::StackName}-WebSocketEndpoint"
-  
+
   WebSocketApiEndpointHttps:
     Description: WebSocket API endpoint URL (HTTPS format) for environment variable
     Value: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
     Export:
       Name: !Sub "${AWS::StackName}-WebSocketEndpointHttps"
-  
+
   ConnectionsTableName:
     Description: DynamoDB table name for WebSocket connections
     Value: !Ref ConnectionsTable

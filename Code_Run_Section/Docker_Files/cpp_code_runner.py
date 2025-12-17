@@ -6,7 +6,7 @@ import sys
 import subprocess
 import time
 
-#setup logger
+# setup logger
 logging.basicConfig(
     stream=sys.stdout,
     level=logging.INFO,
@@ -14,12 +14,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger()
 
-#setup lambda client
+# setup lambda client
 client = boto3.client("lambda")
 
-#Strings to add to user code before running
-IMPORTS = "import sys\n"
-MAIN = "\nif __name__ == \"__main__\":\n\tsol = Solution()\n\tprint(sol."
+# Strings to add to user code before running
+IMPORTS = "#include <bits/stdc++.h>\nusing namespace std;\n"
+#This stores overrides for the << operator in c++. For now,
+#we are only using this for the vector class.
+OVERRIDES = """
+template<typename T>\n
+ostream& operator<<(ostream& os, const vector<T>& v)
+{
+    if(v.size() > 0)
+        os << v[0];
+    for(size_t i = 1; i < v.size(); i++)
+        os << ", " << v[i];
+    return os;
+}
+"""
+MAIN = "int main("
+
 
 def run_code():
     payload = json.loads(os.environ["PAYLOAD"])
@@ -33,23 +47,23 @@ def run_code():
 
     start = time.time()
     i = 1
-    #Run each test case
+    # Run each test case
     for case in payload["test_cases"]:
-        full_script = IMPORTS + payload["code"] + MAIN + func_name + str(case["input"]) + "), end = \"\")"
+        full_script = IMPORTS + OVERRIDES + payload["code"] + MAIN + func_name + str(case["input"]) + "), end = \"\")"
         logger.info(json.dumps({"script": full_script}))
-        #write python file
+        # write python file
         if os.path.exists("submission.py"):
             os.remove("submission.py")
         with open("submission.py", "w") as f:
             f.write(full_script)
 
-        #run python file
+        # run python file
         result = subprocess.run(["python", "submission.py"],
                                 capture_output=True,
                                 text=True)
         os.remove("submission.py")
 
-        #check if output matches
+        # check if output matches
         logger.info(f"result.stdout: {result.stdout}")
         logger.info(f"Expected output: {case["expected_output"]}")
         if result.stdout != str(case["expected_output"]):
@@ -63,10 +77,10 @@ def run_code():
             break
         i += 1
 
-    #Format test results
+    # Format test results
     runtime = time.time() - start
     total_tests = len(payload["test_cases"])
-    
+
     # Handle empty test cases
     if total_tests == 0:
         logger.warning("No test cases provided in payload")
@@ -82,7 +96,7 @@ def run_code():
         # Number of tests that actually ran (all if no failure, or up to first failure)
         tests_run = total_tests if failed_case == 0 else failed_case
         passed_tests = total_tests if failed_case == 0 else failed_case - 1
-        
+
         # Format test results in a structure that frontend expects
         test_results = {
             "success": failed_case == 0,
@@ -91,7 +105,7 @@ def run_code():
             "runtime": runtime,
             "tests": []
         }
-        
+
         # Build tests array - only include tests that were actually executed
         for i in range(tests_run):
             case = payload["test_cases"][i]
@@ -102,7 +116,7 @@ def run_code():
                 "input": str(case["input"]),
                 "expected": str(case["expected_output"])
             }
-            
+
             if test_status == "failed" and i == failed_case - 1:
                 # This is the failed test
                 test_obj["actual"] = failed_output
@@ -110,9 +124,9 @@ def run_code():
             elif test_status == "passed":
                 # For passed tests, actual equals expected
                 test_obj["actual"] = str(case["expected_output"])
-            
+
             test_results["tests"].append(test_obj)
-    
+
     # Prepare payload for relay-results lambda
     # Include context fields needed by relay-results to send to frontend
     relay_payload = {
@@ -127,7 +141,7 @@ def run_code():
 
     logger.info(f"Test results:\n {test_results}")
     logger.info(f"Sending to relay-results:\n {relay_payload}")
-    
+
     try:
         logger.info(f"Invoking Lambda function: {payload['TargetLambda']}")
         response = client.invoke(
@@ -135,11 +149,14 @@ def run_code():
             InvocationType="Event",
             Payload=json.dumps(relay_payload)
         )
-        logger.info(f"Lambda invocation response: StatusCode={response.get('StatusCode')}, ResponseMetadata={response.get('ResponseMetadata', {}).get('HTTPStatusCode')}")
+        logger.info(
+            f"Lambda invocation response: StatusCode={response.get('StatusCode')}, ResponseMetadata={response.get('ResponseMetadata', {}).get('HTTPStatusCode')}")
         if response.get('FunctionError'):
-            logger.error(f"Lambda function error: {response.get('FunctionError')}, Payload: {response.get('Payload', {}).read() if response.get('Payload') else 'None'}")
+            logger.error(
+                f"Lambda function error: {response.get('FunctionError')}, Payload: {response.get('Payload', {}).read() if response.get('Payload') else 'None'}")
     except Exception as e:
         logger.error(f"Error invoking Lambda: {str(e)}", exc_info=True)
+
 
 if __name__ == "__main__":
     run_code()
