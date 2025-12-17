@@ -14,7 +14,6 @@ DB_PASS = os.environ.get('DB_Pass')
 DB_NAME = os.environ.get('DB_Name')
 PORT = os.environ.get('DB_Port')
 
-
 def pull_from_RDS(qid):
     connection = None
     try:

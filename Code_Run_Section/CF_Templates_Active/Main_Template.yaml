@@ -231,7 +231,7 @@ Resources:
           DB_Host: !Ref DBHost
           DB_User: !Ref DBUser
           DB_Pass: !Ref DBPass
-          DBName: !Ref DBName
+          DB_Name: !Ref DBName
           DB_Port: !Ref DBPort
           CodeQueueURL: !Ref CodeQueue
       Code:
