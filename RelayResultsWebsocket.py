@@ -18,13 +18,15 @@ def get_apigateway_client():
     global apigatewaymanagementapi
     if apigatewaymanagementapi is None:
         websocket_endpoint = os.environ['WEBSOCKET_API_ENDPOINT']
-        # Convert HTTPS endpoint to WebSocket API Gateway Management endpoint
+        # For API Gateway Management API, try WITH the stage path
+        # Some configurations require the stage to be included
         # e.g., https://abc123.execute-api.us-east-1.amazonaws.com/prod
-        # becomes: abc123.execute-api.us-east-1.amazonaws.com
-        parsed = urlparse(websocket_endpoint)
-        endpoint_url = f"https://{parsed.netloc}"
+        # Keep the full endpoint including /prod
+        endpoint_url = websocket_endpoint
+        logger.info(f"Using Management API endpoint: {endpoint_url} (with stage path)")
         
         # Extract region from endpoint
+        parsed = urlparse(websocket_endpoint)
         region = parsed.netloc.split('.')[2] if len(parsed.netloc.split('.')) > 2 else os.environ.get('AWS_REGION', 'us-east-1')
         
         apigatewaymanagementapi = boto3.client(
@@ -85,6 +87,8 @@ def send_websocket_message(connection_id, message):
     """
     try:
         api_client = get_apigateway_client()
+        endpoint_url = os.environ.get('WEBSOCKET_API_ENDPOINT', 'Not set')
+        logger.info(f"Attempting to send message to connectionId {connection_id} via endpoint: {endpoint_url}")
         api_client.post_to_connection(
             ConnectionId=connection_id,
             Data=json.dumps(message)
@@ -93,10 +97,17 @@ def send_websocket_message(connection_id, message):
         return True
     except ClientError as e:
         error_code = e.response.get('Error', {}).get('Code', '')
+        error_message = e.response.get('Error', {}).get('Message', '')
+        endpoint_url = os.environ.get('WEBSOCKET_API_ENDPOINT', 'Not set')
         if error_code == 'GoneException':
             logger.warning(f"Connection {connection_id} is gone (disconnected)")
+        elif error_code == 'ForbiddenException':
+            logger.error(f"ForbiddenException sending to {connection_id}. Error: {error_message}")
+            logger.error(f"Endpoint URL: {endpoint_url}")
+            logger.error(f"Check IAM permissions for execute-api:ManageConnections and execute-api:Invoke")
+            logger.error(f"Full error response: {json.dumps(e.response)}")
         else:
-            logger.error(f"ClientError sending message to connectionId {connection_id}: {str(e)}")
+            logger.error(f"ClientError sending message to connectionId {connection_id}: Code={error_code}, Message={error_message}")
         return False
     except Exception as e:
         logger.error(f"Error sending message to connectionId {connection_id}: {str(e)}")
@@ -153,8 +164,22 @@ def lambda_handler(event, context):
             except:
                 payload = event
         
+        # Handle case where code_runner sends only test_results (without context)
+        # If payload only has test result fields, it might be missing context
+        has_context = any(key in payload for key in ['userId', 'cid', 'user_id', 'qid', 'problem_id', 'questionId'])
+        
+        if not has_context and ('success' in payload or 'runtime' in payload):
+            # This looks like test results without context - might be from code_runner
+            # Try to extract from event context or log warning
+            logger.warning("Received test results without context fields. Payload keys: %s", list(payload.keys()))
+            logger.warning("This might be from code_runner that didn't include context. Check code_runner.py")
+        
         # Extract user ID (try multiple possible field names)
-        user_id = payload.get('userId') or payload.get('cid') or payload.get('user_id')
+        # Also check if it's in the Results object
+        user_id = (payload.get('userId') or payload.get('cid') or payload.get('user_id') or 
+                  payload.get('Results', {}).get('userId') if isinstance(payload.get('Results'), dict) else None)
+        
+        logger.info(f"Extracted userId: {user_id} from payload keys: {list(payload.keys())}")
         
         if not user_id:
             logger.error("No userId found in payload. Available keys: %s", list(payload.keys()))
@@ -164,6 +189,7 @@ def lambda_handler(event, context):
             }
         
         # Get connection ID from DynamoDB
+        logger.info(f"Looking up connectionId for userId: {user_id} in table: {connections_table}")
         connection_id = get_connection_id(user_id, connections_table)
         
         if not connection_id:
@@ -174,15 +200,38 @@ def lambda_handler(event, context):
             }
         
         # Parse results
-        results_data = payload.get('Results') or payload.get('results') or {}
+        # Handle both formats:
+        # 1. From code_runner: payload has 'Results' field with test results
+        # 2. From teammate: payload IS the results (has success, runtime, problem_id, etc.)
+        results_data = payload.get('Results') or payload.get('results')
+        
+        # If no Results field, the payload itself might be the results (teammate's format)
+        if results_data is None:
+            # Check if payload looks like test results (has success, runtime, etc.)
+            if 'success' in payload or 'runtime' in payload:
+                results_data = payload
+                logger.info("Payload appears to be test results directly (teammate's format)")
+            else:
+                results_data = {}
+        
         parsed_results = parse_results(results_data)
+        
+        # Extract question ID (handle both qid and problem_id)
+        question_id = payload.get('qid') or payload.get('problem_id') or payload.get('questionId')
+        if not question_id and isinstance(parsed_results, dict):
+            question_id = parsed_results.get('qid') or parsed_results.get('problem_id')
+        
+        # Extract language
+        language = payload.get('language')
+        if not language and isinstance(parsed_results, dict):
+            language = parsed_results.get('language')
         
         # Prepare message to send to frontend
         message = {
             "type": "result",
             "testResults": parsed_results,
-            "questionId": payload.get('qid'),
-            "language": payload.get('language'),
+            "questionId": question_id,
+            "language": language,
             "success": parsed_results.get('success', False) if isinstance(parsed_results, dict) else False
         }
         
@@ -193,6 +242,10 @@ def lambda_handler(event, context):
                 message['success'] = parsed_results.get('passed', 0) == parsed_results.get('total', 0) and parsed_results.get('total', 0) > 0
             elif 'success' in parsed_results:
                 message['success'] = parsed_results['success']
+            # Handle teammate's format: success, runtime, failed test case
+            elif 'runtime' in parsed_results:
+                message['success'] = parsed_results.get('success', False)
+                message['runtime'] = parsed_results.get('runtime')
         
         # Send message via WebSocket
         success = send_websocket_message(connection_id, message)

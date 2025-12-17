@@ -18,6 +18,7 @@ PORT = os.environ.get('DB_Port')
 def pull_test_cases(qid):
     connection = None
     try:
+        logger.info(f"Connecting to database: host={DB_HOST}, db={DB_NAME}, port={PORT}, user={DB_USER}")
         connection = psycopg2.connect(
             host=DB_HOST,
             user=DB_USER,
@@ -28,14 +29,19 @@ def pull_test_cases(qid):
         )
 
         cursor = connection.cursor()
+        # Convert qid to integer if it's a string
+        qid_int = int(qid) if isinstance(qid, str) else qid
+        logger.info(f"Querying test cases for problem_id={qid_int} (original qid={qid}, type={type(qid)})")
+        
         cursor.execute(
             """
             SELECT input, expected_output 
             FROM public.test_cases 
             WHERE problem_id = %s;
-            """, (qid,)
+            """, (qid_int,)
         )
         result = cursor.fetchall()
+        logger.info(f"Found {len(result)} test cases in database")
 
         test_cases = []
         for case in result:
@@ -44,11 +50,17 @@ def pull_test_cases(qid):
                 "expected_output": case[1]
             })
 
+        if len(test_cases) == 0:
+            logger.warning(f"No test cases found for problem_id={qid_int}. Check if test cases exist in database.")
+
         return test_cases
 
     except psycopg2.OperationalError as e:
         # This catches connection errors (timeouts, wrong password, etc)
         logger.error(f"Database connection failed: {e}")
+        raise e
+    except Exception as e:
+        logger.error(f"Error fetching test cases: {e}", exc_info=True)
         raise e
 
     finally:

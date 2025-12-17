@@ -1,0 +1,43 @@
+[
+  {
+    "ParameterKey": "NetworkTemplateURL",
+    "ParameterValue": "https://cftemplates346225466066us-east-2.s3.us-east-2.amazonaws.com/Network_Template.yaml"
+  },
+  {
+    "ParameterKey": "DBHost",
+    "ParameterValue": "codingproblemsdb.cpsi440i610d.us-east-2.rds.amazonaws.com"
+  },
+  {
+    "ParameterKey": "DBName",
+    "ParameterValue": "codingproblemsdb"
+  },
+  {
+    "ParameterKey": "RDSLayerArn",
+    "ParameterValue": "arn:aws:lambda:us-east-2:346225466066:layer:RDSLayer:1"
+  },
+  {
+    "ParameterKey": "DBUser",
+    "ParameterValue": "postgres"
+  },
+  {
+    "ParameterKey": "LambdaCodeS3Bucket",
+    "ParameterValue": "cftemplates346225466066us-east-2"
+  },
+  {
+    "ParameterKey": "LambdaCodeS3KeyPrefix",
+    "ParameterValue": "lambda-functions/"
+  },
+  {
+    "ParameterKey": "DBPass",
+    "ParameterValue": "aUKuZvdmbPMopd6hxxKw"
+  },
+  {
+    "ParameterKey": "DBPort",
+    "ParameterValue": "5432"
+  },
+  {
+    "ParameterKey": "RDSArn",
+    "ParameterValue": "arn:aws:rds:us-east-2:346225466066:db:codingproblemsdb"
+  }
+]
+

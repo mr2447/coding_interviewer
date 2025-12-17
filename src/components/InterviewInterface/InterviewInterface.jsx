@@ -259,7 +259,9 @@ function InterviewInterface() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          zIndex: 100
+          zIndex: 100,
+          height: '60px',
+          boxSizing: 'border-box'
         }}>
           <h3 style={{ margin: 0, color: '#111827', fontSize: '18px' }}>Coding Interviewer</h3>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -300,10 +302,10 @@ function InterviewInterface() {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          height: '100vh',
+          height: 'calc(100vh - 60px)',
           flexDirection: 'column',
           gap: '24px',
-          marginTop: '-60px'
+          marginTop: '60px'
         }}>
           <h2 style={{ fontSize: '24px', color: '#111827' }}>Ready to start?</h2>
           <button
@@ -339,7 +341,9 @@ function InterviewInterface() {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        zIndex: 100
+        zIndex: 100,
+        height: '60px',
+        boxSizing: 'border-box'
       }}>
         <h3 style={{ margin: 0, color: '#111827', fontSize: '18px' }}>Coding Interviewer</h3>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -376,7 +380,7 @@ function InterviewInterface() {
           </button>
         </div>
       </div>
-      <div style={{ marginTop: '60px' }}>
+      <div style={{ marginTop: '60px', height: 'calc(100vh - 60px)' }}>
       {showQuestionForm && (
         <QuestionSelectionForm
           onSubmit={handleQuestionFormSubmit}

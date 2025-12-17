@@ -18,10 +18,22 @@ Parameters:
     Type: String
   RDSArn:
     Type: String
+  LambdaCodeS3Bucket:
+    Type: String
+    Description: S3 bucket name where Lambda function code is stored
+    Default: cftemplates346225466066us-east-2 
+  LambdaCodeS3KeyPrefix:
+    Type: String
+    Description: S3 key prefix for Lambda function code (e.g., 'lambda-functions/')
+    Default: lambda-functions/
 #  APIGatewayInvokeURL:
 #    Type: String
 
 Resources:
+  # Note: LambdaCodeS3Bucket parameter references an existing S3 bucket
+  # The bucket should already exist (cftemplates346225466066us-east-2)
+  # We don't create it here to avoid conflicts with existing buckets
+
   #Nest stack for network layer
   NetworkLayerStack:
     Type: AWS::CloudFormation::Stack
@@ -101,6 +113,7 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        # Removed AWSLambdaVPCAccessExecutionRole - Lambda no longer in VPC
       Policies:
         - PolicyName: RelayResultsPermissions
           PolicyDocument:
@@ -112,7 +125,14 @@ Resources:
               - Effect: Allow
                 Action:
                   - execute-api:ManageConnections
-                Resource: '*'
+                  - execute-api:Invoke
+                # For API Gateway Management API post_to_connection, need @connections/* path
+                # Try explicit stage name 'prod' as well as wildcards
+                Resource: 
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/prod/@connections/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/@connections/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*"
+                  - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/*"
               - Effect: Allow
                 Action:
                   - dynamodb:GetItem
@@ -164,9 +184,8 @@ Resources:
         Variables:
           CodeQueueURL: !Ref CodeQueue
       Code:
-        ZipFile: |
-          def lambda_handler(event, context):
-            return "Hello World!"
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Sub "${LambdaCodeS3KeyPrefix}receive-submission.zip"
       Handler: index.lambda_handler
       Timeout: 15
 
@@ -193,9 +212,8 @@ Resources:
           DB_Port: !Ref DBPort
           CodeQueueURL: !Ref CodeQueue
       Code:
-        ZipFile: |
-          def lambda_handler(event, context):
-            return "Hello World!"
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Sub "${LambdaCodeS3KeyPrefix}invoke-fargate.zip"
       Layers:
         - !Ref RDSLayerArn
       Handler: index.lambda_handler
@@ -207,21 +225,17 @@ Resources:
       Role: !GetAtt RelayResultsIAMRole.Arn
       Runtime: python3.12
       FunctionName: relay-results
-      VpcConfig:
-        SecurityGroupIds: [!GetAtt NetworkLayerStack.Outputs.ComputeSecurityGroup]
-        SubnetIds: [!GetAtt NetworkLayerStack.Outputs.PublicComputeSubnet]
+      # Removed VpcConfig - Lambda doesn't need VPC access for DynamoDB/API Gateway
       Environment:
         Variables:
-          WEBSOCKET_API_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${WebSocketStage.StageName}"
+          WEBSOCKET_API_ENDPOINT: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
           CONNECTIONS_TABLE: !Ref ConnectionsTable
       Code:
-        ZipFile: |
-          def lambda_handler(event, context):
-            return "Hello World!"
-      Layers:
-        - !Ref RDSLayerArn
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Sub "${LambdaCodeS3KeyPrefix}relay-results.zip"
+      # Removed Layers (RDSLayer) - not needed for DynamoDB/API Gateway access
       Handler: index.lambda_handler
-      Timeout: 15
+      Timeout: 30  # Increased timeout for DynamoDB queries
 
 ###########Other Resources###########
   CodeQueue:
@@ -344,15 +358,14 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Role: !GetAtt WebSocketHandlerIAMRole.Arn
-      Runtime: python3.14
+      Runtime: python3.12
       FunctionName: !Sub "${AWS::StackName}-websocket-handler"
       Environment:
         Variables:
           CONNECTIONS_TABLE: !Ref ConnectionsTable
       Code:
-        ZipFile: |
-          def lambda_handler(event, context):
-            return "Hello World!"
+        S3Bucket: !Ref LambdaCodeS3Bucket
+        S3Key: !Sub "${LambdaCodeS3KeyPrefix}websocket-handler.zip"
       Handler: index.lambda_handler
       Timeout: 15
 
@@ -392,4 +405,21 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${WebSocketApi}/*/*"
 
->>>>>>> 32cc34b (added websocket and updated userID in api spec.):CFtemplate.yaml
+Outputs:
+  WebSocketApiEndpoint:
+    Description: WebSocket API endpoint URL for frontend connection
+    Value: !Sub "wss://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: !Sub "${AWS::StackName}-WebSocketEndpoint"
+  
+  WebSocketApiEndpointHttps:
+    Description: WebSocket API endpoint URL (HTTPS format) for environment variable
+    Value: !Sub "https://${WebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: !Sub "${AWS::StackName}-WebSocketEndpointHttps"
+  
+  ConnectionsTableName:
+    Description: DynamoDB table name for WebSocket connections
+    Value: !Ref ConnectionsTable
+    Export:
+      Name: !Sub "${AWS::StackName}-ConnectionsTable"

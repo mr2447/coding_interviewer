@@ -66,39 +66,52 @@ def run_code():
     #Format test results
     runtime = time.time() - start
     total_tests = len(payload["test_cases"])
-    # Number of tests that actually ran (all if no failure, or up to first failure)
-    tests_run = total_tests if failed_case == 0 else failed_case
-    passed_tests = total_tests if failed_case == 0 else failed_case - 1
     
-    # Format test results in a structure that frontend expects
-    test_results = {
-        "success": failed_case == 0,
-        "passed": passed_tests,
-        "total": tests_run,  # Only count tests that were actually run
-        "runtime": runtime,
-        "tests": []
-    }
-    
-    # Build tests array - only include tests that were actually executed
-    for i in range(tests_run):
-        case = payload["test_cases"][i]
-        test_status = "passed" if (failed_case == 0 or i < failed_case - 1) else "failed"
-        test_obj = {
-            "test": i + 1,
-            "status": test_status,
-            "input": str(case["input"]),
-            "expected": str(case["expected_output"])
+    # Handle empty test cases
+    if total_tests == 0:
+        logger.warning("No test cases provided in payload")
+        test_results = {
+            "success": False,
+            "passed": 0,
+            "total": 0,
+            "runtime": runtime,
+            "tests": [],
+            "error": "No test cases found for this question"
+        }
+    else:
+        # Number of tests that actually ran (all if no failure, or up to first failure)
+        tests_run = total_tests if failed_case == 0 else failed_case
+        passed_tests = total_tests if failed_case == 0 else failed_case - 1
+        
+        # Format test results in a structure that frontend expects
+        test_results = {
+            "success": failed_case == 0,
+            "passed": passed_tests,
+            "total": tests_run,  # Only count tests that were actually run
+            "runtime": runtime,
+            "tests": []
         }
         
-        if test_status == "failed" and i == failed_case - 1:
-            # This is the failed test
-            test_obj["actual"] = failed_output
-            test_obj["error"] = failed_output if failed_returncode != 0 else None
-        elif test_status == "passed":
-            # For passed tests, actual equals expected
-            test_obj["actual"] = str(case["expected_output"])
-        
-        test_results["tests"].append(test_obj)
+        # Build tests array - only include tests that were actually executed
+        for i in range(tests_run):
+            case = payload["test_cases"][i]
+            test_status = "passed" if (failed_case == 0 or i < failed_case - 1) else "failed"
+            test_obj = {
+                "test": i + 1,
+                "status": test_status,
+                "input": str(case["input"]),
+                "expected": str(case["expected_output"])
+            }
+            
+            if test_status == "failed" and i == failed_case - 1:
+                # This is the failed test
+                test_obj["actual"] = failed_output
+                test_obj["error"] = failed_output if failed_returncode != 0 else None
+            elif test_status == "passed":
+                # For passed tests, actual equals expected
+                test_obj["actual"] = str(case["expected_output"])
+            
+            test_results["tests"].append(test_obj)
     
     # Prepare payload for relay-results lambda
     # Include context fields needed by relay-results to send to frontend
@@ -116,13 +129,17 @@ def run_code():
     logger.info(f"Sending to relay-results:\n {relay_payload}")
     
     try:
+        logger.info(f"Invoking Lambda function: {payload['TargetLambda']}")
         response = client.invoke(
             FunctionName=payload["TargetLambda"],
             InvocationType="Event",
             Payload=json.dumps(relay_payload)
         )
+        logger.info(f"Lambda invocation response: StatusCode={response.get('StatusCode')}, ResponseMetadata={response.get('ResponseMetadata', {}).get('HTTPStatusCode')}")
+        if response.get('FunctionError'):
+            logger.error(f"Lambda function error: {response.get('FunctionError')}, Payload: {response.get('Payload', {}).read() if response.get('Payload') else 'None'}")
     except Exception as e:
-        logger.error(e)
+        logger.error(f"Error invoking Lambda: {str(e)}", exc_info=True)
 
 if __name__ == "__main__":
     run_code()
