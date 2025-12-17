@@ -3,6 +3,8 @@ import {
   signIn as authSignIn,
   signOut as authSignOut,
   signUp as authSignUp,
+  confirmSignUp as authConfirmSignUp,
+  resendConfirmationCode as authResendConfirmationCode,
   getCurrentUserInfo,
   isAuthenticated,
 } from '../utils/auth';
@@ -51,9 +53,14 @@ export const AuthProvider = ({ children }) => {
       return { success: true };
     } catch (error) {
       console.error('Login error:', error);
+      // Check if user is not confirmed (needs verification)
+      const needsVerification = error.code === 'UserNotConfirmedException' || 
+                                error.name === 'UserNotConfirmedException' ||
+                                error.message?.includes('not confirmed');
       return {
         success: false,
         error: error.message || 'Failed to sign in. Please check your credentials.',
+        needsVerification,
       };
     }
   };
@@ -67,6 +74,32 @@ export const AuthProvider = ({ children }) => {
       return {
         success: false,
         error: error.message || 'Failed to register. Please try again.',
+      };
+    }
+  };
+
+  const verifyEmail = async (email, code) => {
+    try {
+      await authConfirmSignUp(email, code);
+      return { success: true };
+    } catch (error) {
+      console.error('Email verification error:', error);
+      return {
+        success: false,
+        error: error.message || 'Invalid verification code. Please try again.',
+      };
+    }
+  };
+
+  const resendVerificationCode = async (email) => {
+    try {
+      await authResendConfirmationCode(email);
+      return { success: true };
+    } catch (error) {
+      console.error('Resend verification code error:', error);
+      return {
+        success: false,
+        error: error.message || 'Failed to resend verification code. Please try again.',
       };
     }
   };
@@ -90,6 +123,8 @@ export const AuthProvider = ({ children }) => {
     loading,
     login,
     register,
+    verifyEmail,
+    resendVerificationCode,
     logout,
     isAuthenticated: !!user,
     refreshAuth: checkAuthStatus,

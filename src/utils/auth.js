@@ -38,6 +38,51 @@ export const signUp = (email, password) => {
 };
 
 /**
+ * Confirm user registration with verification code
+ * @param {string} email - User email
+ * @param {string} code - Verification code from email
+ * @returns {Promise<void>}
+ */
+export const confirmSignUp = (email, code) => {
+  return new Promise((resolve, reject) => {
+    const cognitoUser = new CognitoUser({
+      Username: email,
+      Pool: userPool,
+    });
+
+    cognitoUser.confirmRegistration(code, true, (err, result) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(result);
+    });
+  });
+};
+
+/**
+ * Resend verification code to user's email
+ * @param {string} email - User email
+ * @returns {Promise<void>}
+ */
+export const resendConfirmationCode = (email) => {
+  return new Promise((resolve, reject) => {
+    const cognitoUser = new CognitoUser({
+      Username: email,
+      Pool: userPool,
+    });
+
+    cognitoUser.resendConfirmationCode((err, result) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(result);
+    });
+  });
+};
+
+/**
  * Sign in an existing user
  * @param {string} email - User email
  * @param {string} password - User password
