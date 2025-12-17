@@ -38,6 +38,10 @@
   {
     "ParameterKey": "RDSArn",
     "ParameterValue": "arn:aws:rds:us-east-2:346225466066:db:codingproblemsdb"
+  },
+  {
+    "ParameterKey": "UserPoolId",
+    "ParameterValue": "us-east-2_jSbGE8cJ3"
   }
 ]
 
