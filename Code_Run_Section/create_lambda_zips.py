@@ -12,8 +12,7 @@ LAMBDA_FUNCTIONS = {
     'receive-submission.zip': 'Lambdas_Source_Code/ReceiveSubmission.py',
     'invoke-fargate.zip': 'Lambdas_Source_Code/InvokeFargate.py',
     'relay-results.zip': '../RelayResultsWebsocket.py',  # In root directory
-    'websocket-handler.zip': '../WebSocketHandler.py',  # In root directory
-    'cognito-post-confirmation.zip': 'Lambdas_Source_Code/CognitoPostConfirmation.py'
+    'websocket-handler.zip': '../WebSocketHandler.py'  # In root directory
 }
 
 def create_lambda_zip(source_file, output_zip):

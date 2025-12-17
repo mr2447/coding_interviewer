@@ -15,10 +15,9 @@ DB_NAME = os.environ.get('DB_Name')
 PORT = os.environ.get('DB_Port')
 
 
-def pull_test_cases(qid):
+def pull_from_RDS(qid):
     connection = None
     try:
-        logger.info(f"Connecting to database: host={DB_HOST}, db={DB_NAME}, port={PORT}, user={DB_USER}")
         connection = psycopg2.connect(
             host=DB_HOST,
             user=DB_USER,
@@ -29,19 +28,15 @@ def pull_test_cases(qid):
         )
 
         cursor = connection.cursor()
-        # Convert qid to integer if it's a string
-        qid_int = int(qid) if isinstance(qid, str) else qid
-        logger.info(f"Querying test cases for problem_id={qid_int} (original qid={qid}, type={type(qid)})")
-        
+        #Pull test cases
         cursor.execute(
             """
             SELECT input, expected_output 
             FROM public.test_cases 
             WHERE problem_id = %s;
-            """, (qid_int,)
+            """, (qid,)
         )
         result = cursor.fetchall()
-        logger.info(f"Found {len(result)} test cases in database")
 
         test_cases = []
         for case in result:
@@ -50,31 +45,38 @@ def pull_test_cases(qid):
                 "expected_output": case[1]
             })
 
-        if len(test_cases) == 0:
-            logger.warning(f"No test cases found for problem_id={qid_int}. Check if test cases exist in database.")
+        #Pull function name
+        cursor.execute(
+            """
+            SELECT func_name 
+            FROM public.problems
+            WHERE problem_id = %s;
+            """, (qid,)
+        )
+        func_name = cursor.fetchone()[0]
 
-        return test_cases
+        return (test_cases, func_name)
 
     except psycopg2.OperationalError as e:
         # This catches connection errors (timeouts, wrong password, etc)
         logger.error(f"Database connection failed: {e}")
-        raise e
-    except Exception as e:
-        logger.error(f"Error fetching test cases: {e}", exc_info=True)
         raise e
 
     finally:
         if connection:
             connection.close()
 
-
-def run_task(attributes, test_cases):
+def run_task(attributes, problem_info):
+    logger.info(f"Test cases: {test_cases}")
+    logger.info(f"Function name: {func_name}")
+    test_cases, func_name = problem_info
     # Extract attributes
     region = attributes['Region']['stringValue']
     code = attributes['Code']['stringValue']
     language = attributes['language']['stringValue']
     qid = attributes['qid']['stringValue']
     cid = attributes['cid']['stringValue']
+    target_lambda = attributes['TargetLambda']['stringValue']
 
     codeRunner = boto3.client('ecs', region_name=region)
 
@@ -86,11 +88,8 @@ def run_task(attributes, test_cases):
         "language": language,
         "region": region,
         "test_cases": test_cases,
-        "TargetLambda": "relay-results",
-        # Hard code values for now
-        "func_name": "isPalindrome",
-        "func_args": "x,integer",
-        "return_type": "bool"
+        "func_name": func_name,
+        "TargetLambda": target_lambda
     }
 
     # Run the task
@@ -126,9 +125,8 @@ def lambda_handler(event, context):
         try:
             attributes = record['messageAttributes']
             # PUll test cases and run task
-            test_cases = pull_test_cases(attributes['qid']['stringValue'])
-            logger.info(f"Test cases: {test_cases}")
-            run_task(attributes, test_cases)
+            problem_info = pull_from_RDS(attributes['qid']['stringValue'])
+            run_task(attributes, problem_info)
             logger.info("Task started")
             # Delete message from queue
             sqs = boto3.client('sqs', region_name=attributes['Region']['stringValue'])

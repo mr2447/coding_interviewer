@@ -137,7 +137,7 @@ def lambda_handler(event, context):
     """
     Lambda handler for relaying code execution results to the frontend via WebSocket.
     
-    Expected event payload (from code_runner.py):
+    Expected event payload (from python_code_runner.py):
     {
         "qid": "question_id",
         "cid": "conversation_id or user_id",
@@ -172,7 +172,7 @@ def lambda_handler(event, context):
             # This looks like test results without context - might be from code_runner
             # Try to extract from event context or log warning
             logger.warning("Received test results without context fields. Payload keys: %s", list(payload.keys()))
-            logger.warning("This might be from code_runner that didn't include context. Check code_runner.py")
+            logger.warning("This might be from code_runner that didn't include context. Check python_code_runner.py")
         
         # Extract user ID (try multiple possible field names)
         # Also check if it's in the Results object
