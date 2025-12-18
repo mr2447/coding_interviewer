@@ -1,0 +1,58 @@
+{
+    "Records": [
+        {
+            "messageId": "62e2c8bd-89f8-47de-9a00-ec3f006b83b1",
+            "receiptHandle": "AQEBMgff/UfI6y1AaSTdrPJHPDFoilyUvJF2W60unKZamF8H92NzPzFzBFkZJDu+JcwdFV07K0UepwLcfSP98FIAKNITGlBfxHw5DNV84QYQ3nR0z1Tpb/xltccXSo3foeF/u8Ev/O8Od47aK4ALsCUNH7tXsK+p8fvAbEc/Z7U/p51kSVmkyuvD/4wILVCxKPRMK1+0r+RncBLsUSkAP38nD43CzeDQ1+GxI9MTiTDofsoiYfQJzVi96wDJIW7oUc4WfXAvQY6S9dprRKrslBeqRFaD89vFQKiayTz4eDgj/5MRin8fL853s3vanMEGXZweYLyWHUuZldWHgNVGr4k6OY+PB3bHGftpCsnRNv8p8I9O44Z8/HWtOgt5aqoVvo+rAq59CjNHlRZ/1TzAKn5jcQ==",
+            "body": "Filler String",
+            "attributes": {
+                "ApproximateReceiveCount": "44",
+                "AWSTraceHeader": "Root=1-69431e15-58122dd6709fc2eb0df98af3;Parent=3c19b6044f422f53;Sampled=0;Lineage=1:cbe682af:0",
+                "SentTimestamp": "1766006293645",
+                "SenderId": "AROAVBHFFLLJBMFW4PT6B:receive-submission",
+                "ApproximateFirstReceiveTimestamp": "1766006293650"
+            },
+            "messageAttributes": {
+                "Region": {
+                    "stringValue": "us-east-2",
+                    "binaryValue": null,
+                    "stringListValues": [],
+                    "binaryListValues": [],
+                    "dataType": "String"
+                },
+                "language": {
+                    "stringValue": "Python",
+                    "binaryValue": null,
+                    "stringListValues": [],
+                    "binaryListValues": [],
+                    "dataType": "String"
+                },
+                "Code": {
+                    "stringValue": "class Solution:\n\tdef is_palindrome_number(self, x):\n\t\txStr = str(x)\n\t\ti = 0\n\t\tj = len(xStr) - 1\n\t\twhile i < j:\n\t\t\tif xStr[i] != xStr[j]:\n\t\t\t\treturn False\n\t\t\ti += 1\n\t\t\tj -= 1\n\t\treturn True",
+                    "binaryValue": null,
+                    "stringListValues": [],
+                    "binaryListValues": [],
+                    "dataType": "String"
+                },
+                "qid": {
+                    "stringValue": "4",
+                    "binaryValue": null,
+                    "stringListValues": [],
+                    "binaryListValues": [],
+                    "dataType": "String"
+                },
+                "cid": {
+                    "stringValue": "1",
+                    "binaryValue": null,
+                    "stringListValues": [],
+                    "binaryListValues": [],
+                    "dataType": "String"
+                }
+            },
+            "md5OfMessageAttributes": "2d608e9b07724c08c6544e07dcf4c2b9",
+            "md5OfBody": "ca77afa71d51cbc044c43b9d8b099678",
+            "eventSource": "aws:sqs",
+            "eventSourceARN": "arn:aws:sqs:us-east-2:346225466066:CodeQueue",
+            "awsRegion": "us-east-2"
+        }
+    ]
+}

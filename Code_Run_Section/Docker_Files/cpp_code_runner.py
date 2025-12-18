@@ -18,11 +18,16 @@ logger = logging.getLogger()
 client = boto3.client("lambda")
 
 # Strings to add to user code before running
-IMPORTS = "#include <bits/stdc++.h>\nusing namespace std;\n"
+IMPORTS = """
+#include <iostream>
+#include<vector>
+using namespace std;
+
+"""
 #This stores overrides for the << operator in c++. For now,
 #we are only using this for the vector class.
 OVERRIDES = """
-template<typename T>\n
+template<typename T>
 ostream& operator<<(ostream& os, const vector<T>& v)
 {
     if(v.size() > 0)
@@ -31,8 +36,13 @@ ostream& operator<<(ostream& os, const vector<T>& v)
         os << ", " << v[i];
     return os;
 }
+
 """
-MAIN = "int main("
+MAIN = """
+int main(){
+    Solution sol;
+    cout << sol.        
+"""
 
 
 def run_code():
@@ -43,36 +53,59 @@ def run_code():
     failed_case = 0
     failed_output = ""
     expected_output = ""
-    failed_returncode = 0  # Track return code of failed test
+    failed_returncode = 0
 
     start = time.time()
     i = 1
     # Run each test case
     for case in payload["test_cases"]:
-        full_script = IMPORTS + OVERRIDES + payload["code"] + MAIN + func_name + str(case["input"]) + "), end = \"\")"
+        full_script = IMPORTS + OVERRIDES + payload["code"] + MAIN + func_name + str(case["input"]) + ");"
+
         logger.info(json.dumps({"script": full_script}))
-        # write python file
         if os.path.exists("submission.py"):
-            os.remove("submission.py")
-        with open("submission.py", "w") as f:
+            os.remove("submission.cpp")
+        with open("submission.cpp", "w") as f:
             f.write(full_script)
 
-        # run python file
-        result = subprocess.run(["python", "submission.py"],
-                                capture_output=True,
-                                text=True)
-        os.remove("submission.py")
+        #compile c++ file
+        compile_proc = subprocess.run(
+            ["g++", "-02", "submissions.cpp", "-o", "submission"],
+            capture_output = True,
+            text = True)
+
+        if compile_proc.returncode != 0:
+            logger.info(f"result.stderr: {compile_proc.stderr}")
+            failed_output = compile_proc.stderr
+            failed_case = i
+            failed_returncode = compile_proc.returncode
+            expected_output = str(case["expected_output"])
+            break
+        run_proc = subprocess.run(
+            ["./submission"],
+            capture_output = True,
+            text = True,
+            timeout = 30
+        )
+
+        os.remove("submission.cpp")
+        os.remove("submission")
 
         # check if output matches
-        logger.info(f"result.stdout: {result.stdout}")
+        logger.info(f"Actual output: {run_proc.stdout}")
         logger.info(f"Expected output: {case["expected_output"]}")
-        if result.stdout != str(case["expected_output"]):
-            if result.returncode == 0:
-                failed_output = result.stdout
+        expecte
+        if str(case["expected_output"]) == "true":
+            expected_output = 1
+
+            str(case["expected_output"]) == false:
+
+        if run_proc.stdout != str(case["expected_output"]):
+            if run_proc.returncode == 0:
+                failed_output = run_proc.stdout
             else:
-                failed_output = result.stderr
+                failed_output = run_proc.stderr
             failed_case = i
-            failed_returncode = result.returncode
+            failed_returncode = run_proc.returncode
             expected_output = str(case["expected_output"])
             break
         i += 1

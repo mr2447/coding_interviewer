@@ -225,7 +225,8 @@ Resources:
           Cluster: !Ref CodeRunCluster
           TaskDefPython: !Ref CodeRunTaskDefinitionPython
           TaskDefCpp: !Ref CodeRunTaskDefinitionCpp
-          ContainerName: "code-run-image-python"
+          PythonContainerName: "code-run-image-python"
+          CppContainerName: "code-run-image-cpp"
           TargetLambda: !Ref RelayResults
           #Variables for DB queries
           DB_Host: !Ref DBHost

@@ -19,12 +19,16 @@ client = boto3.client("lambda")
 
 #Strings to add to user code before running
 IMPORTS = "import sys\n"
-MAIN = "\nif __name__ == \"__main__\":\n\tsol = Solution()\n\tprint(sol."
+MAIN = """
+
+if __name__ == \"__main__\":
+    sol = Solution()
+    print(sol.
+"""
 
 def run_code():
     payload = json.loads(os.environ["PAYLOAD"])
     logger.info("Payload: %s", json.dumps(payload))
-
     func_name = f"{payload["func_name"]}("
     failed_case = 0
     failed_output = ""
@@ -34,7 +38,8 @@ def run_code():
     i = 1
     #Run each test case
     for case in payload["test_cases"]:
-        full_script = IMPORTS + payload["code"] + MAIN + func_name + str(case["input"]) + "), end = \"\")"
+
+        full_script = IMPORTS + payload["code"] + MAIN + func_name + "**" + str(case["input"]) + "), end = \"\")"
         logger.info(json.dumps({"script": full_script}))
         #write python file
         if os.path.exists("submission.py"):

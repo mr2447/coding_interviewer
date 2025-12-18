@@ -1,0 +1,7 @@
+{
+  "httpMethod": "POST",
+  "requestContext": {
+    "region": "us-east-2"
+  },
+  "body": "{\"code\": \"class Solution:\\n\\tdef is_palindrome_number(self, x):\\n\\t\\txStr = str(x)\\n\\t\\ti = 0\\n\\t\\tj = len(xStr) - 1\\n\\t\\twhile i < j:\\n\\t\\t\\tif xStr[i] != xStr[j]:\\n\\t\\t\\t\\treturn False\\n\\t\\t\\ti += 1\\n\\t\\t\\tj -= 1\\n\\t\\treturn True\", \"questionId\": \"4\", \"userId\": \"1\", \"language\": \"Python\"}"
+}
