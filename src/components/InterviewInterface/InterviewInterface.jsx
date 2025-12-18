@@ -13,6 +13,11 @@ import '../../App.css';
 import {
   saveQuestionState,
   loadQuestionState,
+  saveStickySession,
+  loadStickySession,
+  clearStickySession,
+  clearAllUserStickySessions,
+  updateStickySession,
 } from '../../utils/storage';
 import {useEffect} from 'react';
 
@@ -66,6 +71,58 @@ function InterviewInterface() {
       } : null,
     };
   };
+
+  // Restore sticky session on mount if question exists (handles page refresh)
+  useEffect(() => {
+    if (!userId) return;
+    
+    // Try to restore last active question from sticky session
+    const lastQuestionId = window.localStorage.getItem(`last_question_${userId}`);
+    if (lastQuestionId && !currentQuestion) {
+      // Optionally restore the last question, but for now we'll just clear the marker
+      // and let user start fresh or select new question
+      window.localStorage.removeItem(`last_question_${userId}`);
+    }
+  }, [userId, currentQuestion]);
+
+  // Auto-save code to sticky session (debounced)
+  useEffect(() => {
+    if (!currentQuestion?.id || !userId || !code) return;
+    
+    const timeoutId = setTimeout(() => {
+      const session = loadStickySession(userId, currentQuestion.id) || {};
+      updateStickySession(userId, currentQuestion.id, {
+        code: {
+          ...(session.code || {}),
+          [language]: code
+        }
+      });
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [code, language, currentQuestion?.id, userId]);
+
+  // Auto-save language preference
+  useEffect(() => {
+    if (!currentQuestion?.id || !userId) return;
+    updateStickySession(userId, currentQuestion.id, { language });
+  }, [language, currentQuestion?.id, userId]);
+
+  // Auto-save test results
+  useEffect(() => {
+    if (!currentQuestion?.id || !userId) return;
+    if (testResults) {
+      const passStatus = testResults.success || 
+                        (testResults.passed === testResults.total && testResults.total > 0) 
+                        ? 'passed' : 'failed';
+      
+      updateStickySession(userId, currentQuestion.id, {
+        testResults,
+        testResultsSummary,
+        passStatus
+      });
+    }
+  }, [testResults, testResultsSummary, currentQuestion?.id, userId]);
 
   // Initialize WebSocket connection when component mounts
   useEffect(() => {
@@ -133,20 +190,31 @@ function InterviewInterface() {
     if (wsClientRef.current) {
       wsClientRef.current.disconnect();
     }
+    
+    // Clear all sticky sessions on logout
+    if (userId) {
+      clearAllUserStickySessions(userId);
+      window.localStorage.removeItem(`last_question_${userId}`);
+    }
+    
     await logout();
     navigate('/');
   };
 
   // Function to load a new question based on user preferences
   const loadNewQuestion = async (preferences = null) => {
+    // Clear current question's sticky session before loading new one
+    if (currentQuestion?.id && userId) {
+      clearStickySession(userId, currentQuestion.id);
+    }
+    
     setIsLoadingQuestion(true);
     setQuestionError(null);
-    setCode(''); // Reset code editor
-    chatBotResetKey.current += 1; // Reset chatbot messages
-    setSubmissionStatus(null); // Reset submission status
-    setTestResultsSummary(null); // Reset test results summary
-    setTestResults(null); // Reset full test results
-    setShowQuestionForm(false); // Hide form while loading
+    chatBotResetKey.current += 1; // Reset chatbot (will load fresh state)
+    setSubmissionStatus(null);
+    setTestResultsSummary(null);
+    setTestResults(null);
+    setShowQuestionForm(false);
 
     try {
       const question = await fetchNextQuestion({
@@ -154,25 +222,46 @@ function InterviewInterface() {
         topic: preferences?.topic || null,
         difficulty: preferences?.difficulty || null,
       });
+      
       setCurrentQuestion(question);
       
-      // Store all templates in state
+      // Store templates
       if (question.template && typeof question.template === 'object') {
         setTemplates({
           python: question.template.python || '',
           cpp: question.template.cpp || '',
         });
-        // Set initial code based on current language
-        setCode(question.template[language] || '');
       } else {
-        // Fallback: if template is not an object, reset templates
         setTemplates({ python: '', cpp: '' });
-        setCode('');
       }
+      
+      // Try to load sticky session for this question
+      const session = loadStickySession(userId, question.id);
+      
+      if (session) {
+        // Restore from sticky session
+        const sessionLanguage = session.language || language;
+        setCode(session.code?.[sessionLanguage] || 
+                question.template?.[sessionLanguage] || 
+                question.template?.[language] || '');
+        setLanguage(sessionLanguage);
+        setTestResults(session.testResults || null);
+        setTestResultsSummary(session.testResultsSummary || null);
+        // Hints and threadId will be restored by ChatBot component
+      } else {
+        // New question - start fresh with template
+        setCode(question.template?.[language] || '');
+        setLanguage('python'); // Reset to default
+        setTestResults(null);
+        setTestResultsSummary(null);
+      }
+      
+      // Mark this as the last active question
+      window.localStorage.setItem(`last_question_${userId}`, question.id);
     } catch (error) {
       console.error('Failed to fetch question from API:', error);
       setQuestionError(error.message || 'Failed to fetch question. Please try again.');
-      setShowQuestionForm(true); // Show form again on error
+      setShowQuestionForm(true);
     } finally {
       setIsLoadingQuestion(false);
     }
@@ -195,9 +284,33 @@ function InterviewInterface() {
   };
 
   const handleLanguageChange = (newLanguage) => {
+    // Save current language's code before switching
+    if (currentQuestion?.id && userId && code) {
+      const session = loadStickySession(userId, currentQuestion.id) || {};
+      updateStickySession(userId, currentQuestion.id, {
+        code: {
+          ...(session.code || {}),
+          [language]: code
+        }
+      });
+    }
+    
     setLanguage(newLanguage);
-    // Switch to the template for the new language (no API call!)
-    setCode(templates[newLanguage] || '');
+    
+    // Load saved code for new language, or fall back to template
+    if (currentQuestion?.id && userId) {
+      const session = loadStickySession(userId, currentQuestion.id);
+      const savedCode = session?.code?.[newLanguage];
+      if (savedCode) {
+        setCode(savedCode);
+      } else if (templates[newLanguage]) {
+        setCode(templates[newLanguage]);
+      } else {
+        setCode('');
+      }
+    } else {
+      setCode(templates[newLanguage] || '');
+    }
   };
 
   const handleSubmit = async (submittedCode) => {

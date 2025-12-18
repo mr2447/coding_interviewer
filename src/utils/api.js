@@ -25,17 +25,28 @@ const handleResponse = async (response) => {
   try {
     data = await response.json();
   } catch (e) {
-    throw new Error(`Failed to parse JSON response: ${e.message}`);
+    // If we can't parse JSON, try to get text response
+    const text = await response.text().catch(() => 'No response body');
+    throw new Error(`Failed to parse JSON response: ${e.message}. Response body: ${text}`);
   }
 
   if (!response.ok) {
     const message =
       data?.error?.message ||
       data?.message ||
+      data?.error ||
       `Request failed with status ${response.status}`;
     const error = new Error(message);
     error.response = response;
     error.data = data;
+    error.status = response.status;
+    // Log full error details for debugging
+    console.error('API Error:', {
+      status: response.status,
+      statusText: response.statusText,
+      url: response.url,
+      errorData: data,
+    });
     throw error;
   }
 
@@ -176,19 +187,24 @@ export const fetchNextQuestion = async ({ userId, topic = null, difficulty = nul
     userId: userId,
   });
   
-  if (topic) {
-    params.append('topic', topic);
+  // Only append topic/difficulty if they have truthy values (not null, not empty string)
+  if (topic && topic.trim()) {
+    params.append('topic', topic.trim());
   }
   
-  if (difficulty) {
-    params.append('difficulty', difficulty);
+  if (difficulty && difficulty.trim()) {
+    params.append('difficulty', difficulty.trim());
   }
 
   const headers = await buildAuthHeaders({
     'Content-Type': 'application/json',
   });
 
-  const response = await fetch(`${buildUrl('/questions')}?${params.toString()}`, {
+  const url = `${buildUrl('/questions')}?${params.toString()}`;
+  console.log('Fetching question from:', url);
+  console.log('Request params:', { userId, topic, difficulty });
+
+  const response = await fetch(url, {
     method: 'GET',
     headers,
   });

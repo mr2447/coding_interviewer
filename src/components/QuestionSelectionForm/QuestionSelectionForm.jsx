@@ -45,14 +45,33 @@ const QuestionSelectionForm = ({ onSubmit, onCancel, isLoading, userName, error 
         <form onSubmit={handleSubmit} className="question-selection-form">
           <div className="question-selection-field">
             <label htmlFor="topic">Topic (Optional)</label>
-            <input
+            <select
               id="topic"
-              type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
-              placeholder="e.g., Arrays, Graphs, Dynamic Programming"
               disabled={isLoading}
-            />
+            >
+              <option value="">Select topic...</option>
+              <option value="sliding-window">sliding-window</option>
+              <option value="matrix">matrix</option>
+              <option value="bfs">bfs</option>
+              <option value="divide-and-conquer">divide-and-conquer</option>
+              <option value="sorting">sorting</option>
+              <option value="dfs">dfs</option>
+              <option value="array">array</option>
+              <option value="math">math</option>
+              <option value="graph">graph</option>
+              <option value="stack">stack</option>
+              <option value="hash-table">hash-table</option>
+              <option value="topological-sort">topological-sort</option>
+              <option value="string">string</option>
+              <option value="heap">heap</option>
+              <option value="two-pointers">two-pointers</option>
+              <option value="dynamic-programming">dynamic-programming</option>
+              <option value="intervals">intervals</option>
+              <option value="binary-search">binary-search</option>
+              <option value="implementation">implementation</option>
+            </select>
             <p className="field-hint">Leave empty to let AI decide</p>
           </div>
 
