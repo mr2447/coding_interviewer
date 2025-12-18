@@ -243,10 +243,28 @@ function InterviewInterface() {
       setCurrentQuestion(question);
       
       // Store templates (parse escape sequences from database)
+      let pythonTemplate = '';
+      let cppTemplate = '';
+      
       if (question.template && typeof question.template === 'object') {
+        pythonTemplate = parseEscapeSequences(question.template.python || '');
+        cppTemplate = parseEscapeSequences(question.template.cpp || '');
+        
+        // Debug logging to identify the issue
+        console.log('Question templates received:', {
+          questionId: question.id,
+          questionTitle: question.title,
+          rawTemplate: question.template,
+          pythonLength: pythonTemplate.length,
+          cppLength: cppTemplate.length,
+          pythonPreview: pythonTemplate.substring(0, 100),
+          cppPreview: cppTemplate.substring(0, 100),
+          areEqual: pythonTemplate === cppTemplate
+        });
+        
         setTemplates({
-          python: parseEscapeSequences(question.template.python || ''),
-          cpp: parseEscapeSequences(question.template.cpp || ''),
+          python: pythonTemplate,
+          cpp: cppTemplate,
         });
       } else {
         setTemplates({ python: '', cpp: '' });
@@ -257,20 +275,29 @@ function InterviewInterface() {
       
       if (session) {
         // Restore from sticky session
-        const sessionLanguage = session.language || language;
+        const sessionLanguage = session.language || 'python';
+        // Use the parsed templates we just created, not the raw question.template
+        const parsedTemplates = {
+          python: pythonTemplate,
+          cpp: cppTemplate
+        };
+        
         // Don't parse code from localStorage - JSON.parse already handled it
-        // But parse template fallbacks if needed (they come from database)
+        // Use the parsed templates state instead of raw question.template
         setCode(session.code?.[sessionLanguage] || 
-                parseEscapeSequences(question.template?.[sessionLanguage] || '') || 
-                parseEscapeSequences(question.template?.[language] || ''));
+                parsedTemplates[sessionLanguage] || 
+                parsedTemplates['python'] || 
+                '');
         setLanguage(sessionLanguage);
         setTestResults(session.testResults || null);
         setTestResultsSummary(session.testResultsSummary || null);
         // Hints and threadId will be restored by ChatBot component
       } else {
         // New question - start fresh with parsed template
-        setCode(parseEscapeSequences(question.template?.[language] || ''));
-        setLanguage('python'); // Reset to default
+        // Use the parsed templates we just created
+        const initialLanguage = 'python';
+        setCode(pythonTemplate || '');
+        setLanguage(initialLanguage);
         setTestResults(null);
         setTestResultsSummary(null);
       }
@@ -323,11 +350,27 @@ function InterviewInterface() {
       if (savedCode) {
         setCode(savedCode);
       } else if (templates[newLanguage]) {
+        // Debug logging
+        console.log('Loading template for language:', {
+          language: newLanguage,
+          templateLength: templates[newLanguage].length,
+          templatePreview: templates[newLanguage].substring(0, 100),
+          availableTemplates: Object.keys(templates),
+          pythonTemplate: templates.python?.substring(0, 50),
+          cppTemplate: templates.cpp?.substring(0, 50)
+        });
         setCode(templates[newLanguage]);
       } else {
         setCode('');
       }
     } else {
+      // Debug logging
+      console.log('Loading template for language (no session):', {
+        language: newLanguage,
+        templateLength: templates[newLanguage]?.length || 0,
+        templatePreview: templates[newLanguage]?.substring(0, 100) || 'N/A',
+        availableTemplates: Object.keys(templates)
+      });
       setCode(templates[newLanguage] || '');
     }
   };

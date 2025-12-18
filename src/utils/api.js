@@ -209,7 +209,77 @@ export const fetchNextQuestion = async ({ userId, topic = null, difficulty = nul
     headers,
   });
 
+  console.log('Response received, status:', response.status);
+  
+  // Get raw response text first to see what we're actually receiving
+  let responseText;
+  try {
+    responseText = await response.clone().text();
+    console.log('=== RAW API RESPONSE ===');
+    console.log('Response status:', response.status);
+    console.log('Response statusText:', response.statusText);
+    console.log('Raw response text length:', responseText?.length);
+    console.log('Raw response text (first 500 chars):', responseText?.substring(0, 500));
+    
+    // Try to parse it manually to see the structure
+    try {
+      const parsedResponse = JSON.parse(responseText);
+      console.log('Parsed response keys:', Object.keys(parsedResponse));
+      console.log('Template in parsed response:', parsedResponse.template);
+      if (parsedResponse.template) {
+        console.log('Template keys:', Object.keys(parsedResponse.template));
+        console.log('Python template exists:', !!parsedResponse.template.python);
+        console.log('C++ template exists:', !!parsedResponse.template.cpp);
+        if (parsedResponse.template.python) {
+          console.log('Python template (first 200 chars):', parsedResponse.template.python.substring(0, 200));
+          console.log('Python template length:', parsedResponse.template.python.length);
+        }
+        if (parsedResponse.template.cpp) {
+          console.log('C++ template (first 200 chars):', parsedResponse.template.cpp.substring(0, 200));
+          console.log('C++ template length:', parsedResponse.template.cpp.length);
+        }
+        console.log('Are templates equal in raw response?', parsedResponse.template.python === parsedResponse.template.cpp);
+        console.log('Template comparison details:', {
+          pythonLength: parsedResponse.template.python?.length,
+          cppLength: parsedResponse.template.cpp?.length,
+          areEqual: parsedResponse.template.python === parsedResponse.template.cpp,
+          pythonStartsWith: parsedResponse.template.python?.substring(0, 50),
+          cppStartsWith: parsedResponse.template.cpp?.substring(0, 50)
+        });
+      } else {
+        console.log('WARNING: No template object in response!');
+      }
+    } catch (e) {
+      console.error('Failed to parse response as JSON:', e);
+      console.error('Response text that failed to parse:', responseText);
+    }
+    console.log('========================');
+  } catch (e) {
+    console.error('Error reading response text:', e);
+  }
+  
   const data = await handleResponse(response);
+  
+  // Debug logging to check template data from API
+  console.log('=== PARSED API RESPONSE DEBUG ===');
+  console.log('Full parsed data:', JSON.stringify(data, null, 2));
+  console.log('Template object:', data.template);
+  console.log('Template type:', typeof data.template);
+  console.log('Is template an object?', typeof data.template === 'object' && data.template !== null);
+  console.log('Template keys:', data.template ? Object.keys(data.template) : 'N/A');
+  console.log('Python template exists:', !!data.template?.python);
+  console.log('C++ template exists:', !!data.template?.cpp);
+  if (data.template?.python) {
+    console.log('Python template (first 200 chars):', data.template.python.substring(0, 200));
+    console.log('Python template length:', data.template.python.length);
+  }
+  if (data.template?.cpp) {
+    console.log('C++ template (first 200 chars):', data.template.cpp.substring(0, 200));
+    console.log('C++ template length:', data.template.cpp.length);
+  }
+  console.log('Are templates equal?', data.template?.python === data.template?.cpp);
+  console.log('Are templates same reference?', data.template?.python === data.template?.cpp);
+  console.log('==================================');
   
   // Normalize examples to ensure input/output are always strings
   const normalizeExamples = (examples) => {
