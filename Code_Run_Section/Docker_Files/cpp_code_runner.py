@@ -6,6 +6,8 @@ import sys
 import subprocess
 import time
 
+from markdown_it.common.html_re import declaration
+
 # setup logger
 logging.basicConfig(
     stream=sys.stdout,
@@ -30,20 +32,66 @@ OVERRIDES = """
 template<typename T>
 ostream& operator<<(ostream& os, const vector<T>& v)
 {
+    os << "[";
     if(v.size() > 0)
         os << v[0];
     for(size_t i = 1; i < v.size(); i++)
         os << ", " << v[i];
+    os << "]";
     return os;
 }
 
 """
-MAIN = """
-int main(){
-    Solution sol;
-    cout << sol.        
-"""
 
+def handle_list(val):
+    if len(val) == 0:
+        return "{}"
+    first = True
+    test_case = "{"
+    for i in range(0, len(val)):
+        if first:
+            first = False
+        else:
+            test_case += ", "
+        if isinstance(val[i], list):
+            test_case += handle_list(val)
+        else:
+            test_case += str(val[i])
+    test_case += "}"
+    return test_case
+
+def parse_test_case(raw_test_case):
+    logger.info(raw_test_case)
+    test_case = ""
+    first = True
+    for val in raw_test_case.values():
+        if first:
+            first = False
+        else:
+            test_case += ", "
+        #Currently only handling lists and literal values
+        if isinstance(val, list):
+            test_case += handle_list(val)
+        else:
+            test_case += str(val)
+    return test_case
+
+def get_cpp_type(val):
+    if isinstance(val, bool):
+        return "bool"
+    if isinstance(val, int):
+        return "int"
+    if isinstance(val, str):
+        return "string"
+    if isinstance(val, list):
+        # If the list is empty, we will assume that base type is int.
+        # Will need to be fixed later.
+        if len(val) == 0:
+            return "vector<int>"
+        # Recursive step: Get the type of the first element
+        inner_type = get_cpp_type(val[0])
+        return f"vector<{inner_type}>"
+    return "auto"
 
 def run_code():
     payload = json.loads(os.environ["PAYLOAD"])
@@ -56,20 +104,46 @@ def run_code():
     failed_returncode = 0
 
     start = time.time()
-    i = 1
-    # Run each test case
-    for case in payload["test_cases"]:
-        full_script = IMPORTS + OVERRIDES + payload["code"] + MAIN + func_name + str(case["input"]) + ");"
+    for i, case in enumerate(payload["test_cases"], 1):
+        declarations = ""
+        arg_names = []
+        #create arguments line by line
+        for idx, val in enumerate(case["input"].values()):
+            var_name = f"arg{idx}"
+            cpp_type = get_cpp_type(val)
 
+            val_str = ""
+            if isinstance(val, list):
+                val_str = handle_list(val)
+            elif isinstance(val, bool):
+                val_str = "1" if val else "0"
+            else:
+                val_str = str(val)
+
+            declarations += f" {cpp_type} {var_name} = {val_str};\n"
+            arg_names.append(var_name)
+        # Joins args for the function call
+        args_str = ", ".join(arg_names)
+        #contsruct main function
+        main_body = f"""
+        int main() {{
+            Solution sol;
+        {declarations}
+            cout << sol.{func_name}({args_str});
+            return 0;
+        }}
+        """
+        full_script = IMPORTS + OVERRIDES + payload["code"] + main_body;
         logger.info(json.dumps({"script": full_script}))
-        if os.path.exists("submission.py"):
+
+        if os.path.exists("submission.cpp"):
             os.remove("submission.cpp")
         with open("submission.cpp", "w") as f:
             f.write(full_script)
 
         #compile c++ file
         compile_proc = subprocess.run(
-            ["g++", "-02", "submissions.cpp", "-o", "submission"],
+            ["g++", "-O2", "submission.cpp", "-o", "submission"],
             capture_output = True,
             text = True)
 
@@ -93,13 +167,13 @@ def run_code():
         # check if output matches
         logger.info(f"Actual output: {run_proc.stdout}")
         logger.info(f"Expected output: {case["expected_output"]}")
-        expecte
-        if str(case["expected_output"]) == "true":
-            expected_output = 1
+        expected_output = str(case["expected_output"])
+        if expected_output == "True":
+            expected_output = "1"
+        elif expected_output == "False":
+            expected_output = "0"
 
-            str(case["expected_output"]) == false:
-
-        if run_proc.stdout != str(case["expected_output"]):
+        if run_proc.stdout != expected_output:
             if run_proc.returncode == 0:
                 failed_output = run_proc.stdout
             else:
@@ -110,86 +184,28 @@ def run_code():
             break
         i += 1
 
-    # Format test results
+    #Format response
     runtime = time.time() - start
-    total_tests = len(payload["test_cases"])
-
-    # Handle empty test cases
-    if total_tests == 0:
-        logger.warning("No test cases provided in payload")
-        test_results = {
-            "success": False,
-            "passed": 0,
-            "total": 0,
-            "runtime": runtime,
-            "tests": [],
-            "error": "No test cases found for this question"
-        }
+    if failed_case == 0:
+        response = {"success": True,
+                    "runtime": runtime,
+                    "user_id": payload["cid"]}
     else:
-        # Number of tests that actually ran (all if no failure, or up to first failure)
-        tests_run = total_tests if failed_case == 0 else failed_case
-        passed_tests = total_tests if failed_case == 0 else failed_case - 1
+        response = {"success": False,
+                    "failed_case": failed_case,
+                    "output": failed_output,
+                    "expected_output": expected_output,
+                    "user_id": payload["cid"]}
 
-        # Format test results in a structure that frontend expects
-        test_results = {
-            "success": failed_case == 0,
-            "passed": passed_tests,
-            "total": tests_run,  # Only count tests that were actually run
-            "runtime": runtime,
-            "tests": []
-        }
-
-        # Build tests array - only include tests that were actually executed
-        for i in range(tests_run):
-            case = payload["test_cases"][i]
-            test_status = "passed" if (failed_case == 0 or i < failed_case - 1) else "failed"
-            test_obj = {
-                "test": i + 1,
-                "status": test_status,
-                "input": str(case["input"]),
-                "expected": str(case["expected_output"])
-            }
-
-            if test_status == "failed" and i == failed_case - 1:
-                # This is the failed test
-                test_obj["actual"] = failed_output
-                test_obj["error"] = failed_output if failed_returncode != 0 else None
-            elif test_status == "passed":
-                # For passed tests, actual equals expected
-                test_obj["actual"] = str(case["expected_output"])
-
-            test_results["tests"].append(test_obj)
-
-    # Prepare payload for relay-results lambda
-    # Include context fields needed by relay-results to send to frontend
-    relay_payload = {
-        "qid": payload.get("qid"),
-        "cid": payload.get("cid"),  # userId - relay-results will look for userId or cid
-        "userId": payload.get("cid"),  # Also include as userId for clarity
-        "language": payload.get("language"),
-        "code": payload.get("code"),
-        "region": payload.get("region"),
-        "Results": test_results  # The test results in expected format
-    }
-
-    logger.info(f"Test results:\n {test_results}")
-    logger.info(f"Sending to relay-results:\n {relay_payload}")
-
+    logger.info(f"Response:\n {response}")
     try:
-        logger.info(f"Invoking Lambda function: {payload['TargetLambda']}")
         response = client.invoke(
             FunctionName=payload["TargetLambda"],
             InvocationType="Event",
-            Payload=json.dumps(relay_payload)
+            Payload=json.dumps(response)
         )
-        logger.info(
-            f"Lambda invocation response: StatusCode={response.get('StatusCode')}, ResponseMetadata={response.get('ResponseMetadata', {}).get('HTTPStatusCode')}")
-        if response.get('FunctionError'):
-            logger.error(
-                f"Lambda function error: {response.get('FunctionError')}, Payload: {response.get('Payload', {}).read() if response.get('Payload') else 'None'}")
     except Exception as e:
-        logger.error(f"Error invoking Lambda: {str(e)}", exc_info=True)
-
+        logger.error(e)
 
 if __name__ == "__main__":
     run_code()
