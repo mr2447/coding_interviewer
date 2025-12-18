@@ -21,6 +21,23 @@ import {
 } from '../../utils/storage';
 import {useEffect} from 'react';
 
+// Utility function to parse escape sequences from database strings
+// Converts literal \n strings to actual newlines for Monaco editor
+const parseEscapeSequences = (str) => {
+  if (!str || typeof str !== 'string') return str;
+  try {
+    // Use JSON.parse to properly handle escape sequences like \n, \t, etc.
+    return JSON.parse('"' + str.replace(/"/g, '\\"') + '"');
+  } catch (e) {
+    // Fallback: manually replace common escape sequences
+    return str
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\r/g, '\r')
+      .replace(/\\\\/g, '\\');
+  }
+};
+
 function InterviewInterface() {
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [code, setCode] = useState('');
@@ -225,11 +242,11 @@ function InterviewInterface() {
       
       setCurrentQuestion(question);
       
-      // Store templates
+      // Store templates (parse escape sequences from database)
       if (question.template && typeof question.template === 'object') {
         setTemplates({
-          python: question.template.python || '',
-          cpp: question.template.cpp || '',
+          python: parseEscapeSequences(question.template.python || ''),
+          cpp: parseEscapeSequences(question.template.cpp || ''),
         });
       } else {
         setTemplates({ python: '', cpp: '' });
@@ -241,16 +258,18 @@ function InterviewInterface() {
       if (session) {
         // Restore from sticky session
         const sessionLanguage = session.language || language;
+        // Don't parse code from localStorage - JSON.parse already handled it
+        // But parse template fallbacks if needed (they come from database)
         setCode(session.code?.[sessionLanguage] || 
-                question.template?.[sessionLanguage] || 
-                question.template?.[language] || '');
+                parseEscapeSequences(question.template?.[sessionLanguage] || '') || 
+                parseEscapeSequences(question.template?.[language] || ''));
         setLanguage(sessionLanguage);
         setTestResults(session.testResults || null);
         setTestResultsSummary(session.testResultsSummary || null);
         // Hints and threadId will be restored by ChatBot component
       } else {
-        // New question - start fresh with template
-        setCode(question.template?.[language] || '');
+        // New question - start fresh with parsed template
+        setCode(parseEscapeSequences(question.template?.[language] || ''));
         setLanguage('python'); // Reset to default
         setTestResults(null);
         setTestResultsSummary(null);
