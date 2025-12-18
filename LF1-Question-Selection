@@ -1,0 +1,358 @@
+import json
+from openai import OpenAI
+from pydantic import BaseModel, Field
+from typing import Literal
+import os
+from collections import defaultdict
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+def get_db_connection():
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD
+        )
+        return conn
+    except Exception as e:
+        print(f"Error connecting to database: {e}")
+        return None
+
+def get_ai_context(user_cognito_sub):
+    """
+    Returns the two data structures needed for the AI prompt:
+    1. available_questions: { 'Arrays': {'Easy': 5, 'Medium': 2}, ... }
+    2. user_mastery: { 'Arrays': {'Easy': 0.9, 'Medium': 0.2}, ... }
+    """
+    connection = get_db_connection()
+    if not connection: return {}, {}
+
+    try:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            # -- QUERY A: ELIGIBLE Counts ---
+            sql_counts = """
+            SELECT t.name AS topic, p.difficulty, COUNT(p.id) AS count
+            FROM public.problems p
+            JOIN public.problem_tags pt on p.id = pt.problem_id
+            JOIN public.tags t on pt.tag_id = t.id
+            WHERE p.id NOT IN (
+                SELECT problem_id FROM public.submissions
+                WHERE user_sub = %s AND status = 'pass'
+            )
+            GROUP BY t.name, p.difficulty
+            """
+            cursor.execute(sql_counts, (user_cognito_sub,))
+
+            counts_tree = defaultdict(dict)
+            for row in cursor.fetchall():
+                counts_tree[row['topic']][row['difficulty']] = row['count']
+
+            # -- QUERY B: Mastery Stats ---
+            sql_mastery = """
+            SELECT t.name AS topic, p.difficulty,
+            AVG(CASE WHEN s.status = 'pass' THEN 1.0 ELSE 0.0 END) AS score
+            FROM public.submissions s
+            JOIN public.problems p on s.problem_id = p.id
+            JOIN public.problem_tags pt on p.id = pt.problem_id
+            JOIN public.tags t on pt.tag_id = t.id
+            WHERE s.user_sub = %s
+            GROUP BY t.name, p.difficulty
+            """
+
+            cursor.execute(sql_mastery, (user_cognito_sub,))
+
+            mastery_tree = defaultdict(dict)
+            for row in cursor.fetchall():
+                score = row['score']
+                mastery_tree[row['topic']][row['difficulty']] = 0.0 if score is None else round(float(score), 2)
+
+            return dict(counts_tree), dict(mastery_tree)
+    except Exception as e:
+        print(f"Error getting AI context: {e}")
+        return {}, {}
+    finally:
+        connection.close()
+
+def get_all_questions():
+    """
+    Returns counts of all questions in the database by topic and difficulty.
+    """
+    connection = get_db_connection()
+    if not connection: return {}
+
+    try:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            # GET ALL AVAILABLE QUESTIONS COUNTS
+            sql_counts = """
+            SELECT t.name AS topic, p.difficulty, COUNT(p.id) AS count
+            FROM public.problems p
+            JOIN public.problem_tags pt on p.id = pt.problem_id
+            JOIN public.tags t on pt.tag_id = t.id
+            GROUP BY t.name, p.difficulty
+            """
+            cursor.execute(sql_counts)
+            counts_tree = defaultdict(dict)
+            for row in cursor.fetchall():
+                counts_tree[row['topic']][row['difficulty']] = row['count']
+            return dict(counts_tree)
+    except Exception as e:
+        print(f"Error getting all questions: {e}")
+        return {}
+    finally:
+        connection.close()
+
+def select_next_question(user_cognito_sub, topic, difficulty, review_mode=False):
+    """
+    Finds a question. Tries NEW first, falls back to REVIEW.
+
+    RETURN FORMMAT:
+    {
+        "id": int,
+        "title": str,
+        "statement": str,
+        "python_start": str,
+        "cpp_start": str,
+        "constraints": str,
+        "hints": str,
+        "example_input": str,
+        "example_output": str,
+        "example_explanation": str,
+        "topic": str,
+        "difficulty": str,
+        "has_example": bool,
+        "is_review_mode": bool,
+    }
+    """
+    connection = get_db_connection()
+    if not connection: 
+        print("Error getting database connection.")
+        return None
+
+    try:
+        with connection.cursor(cursor_factory=RealDictCursor) as cursor:
+            select_clause = """
+                SELECT
+                    p.id,
+                    p.title,
+                    p.statement,
+                    p.python_start,
+                    p.cpp_start,
+                    p.constraints,
+                    p.hints,
+                    tc.input AS example_input,
+                    tc.expected_output AS example_output,
+                    tc.explanation AS example_explanation,
+                    t.name AS topic,
+                    p.difficulty,
+                    CASE WHEN tc.id IS NULL THEN FALSE ELSE TRUE END AS has_example,
+            """
+            if not review_mode:
+            # PLAN A: New Question
+                sql_new = f"""
+                {select_clause}
+                    FALSE as is_review_mode
+                FROM public.problems p
+                JOIN public.problem_tags pt ON p.id = pt.problem_id
+                JOIN public.tags t ON pt.tag_id = t.id
+                LEFT JOIN public.test_cases tc ON p.id = tc.problem_id AND tc.order_index = 0
+                WHERE t.name = %s
+                    AND p.difficulty = %s
+                    AND NOT EXISTS (
+                        SELECT 1 FROM public.submissions s
+                        WHERE s.problem_id = p.id
+                        AND s.user_sub = %s
+                        AND s.status = 'pass'
+                    )
+                ORDER BY RANDOM() LIMIT 1
+                """
+                cursor.execute(sql_new, (topic, difficulty, user_cognito_sub))
+                result = cursor.fetchone()
+                if result:
+                    return result
+
+            # PLAN B: Review Mode
+            print(f"No new questions for {topic} {difficulty}. Switching to Review Mode.")
+
+            sql_review = f"""
+            {select_clause}
+                TRUE as is_review_mode
+            FROM public.problems p
+            JOIN public.problem_tags pt ON p.id = pt.problem_id
+            JOIN public.tags t ON pt.tag_id = t.id
+            LEFT JOIN public.test_cases tc ON p.id = tc.problem_id AND tc.order_index = 0
+            WHERE t.name = %s
+            AND p.difficulty = %s
+            ORDER BY RANDOM() LIMIT 1
+            """
+            cursor.execute(sql_review, (topic, difficulty))
+            return cursor.fetchone()
+    except Exception as e:
+        print(f"Error selecting next question: {e}")
+        return None
+    finally:
+        connection.close()
+
+
+client = OpenAI()
+
+class QuestionRecommendation(BaseModel):
+    topic:  str = Field(description="The chosen topic based on user history.")
+    difficulty: Literal["Easy", "Medium", "Hard"] = Field(description="The chosen difficulty level based on user history.")
+    reasoning: str = Field(description="A brief explanation of why this was chosen.")
+
+
+system_instructions = """
+You are an expert Technical Interview Coach responsible for managing a candidate's practice curriculum.
+
+Your Goal:
+Select the most appropriate Topic and Difficulty for the candidate's next coding question based on their performance history.
+
+Decision Logic:
+1. Growth: If the candidate has a high correct rate (>70%) in a topic/difficulty, challenge them by increasing difficulty or switching to a topic they haven't mastered.
+2. Remediation: If the candidate has a low correct rate (<40%) or failed their last attempt, lower the difficulty or keep them on the same topic for reinforcement.
+3. Exploration: If the candidate has no history, start with "Easy" difficulty and a fundamental topic like "Arrays" or "Strings".
+
+Constraints:
+- If the candidate has already selected a topic or difficulty, you must choose the same topic or difficulty. (Candidate supplied topic and difficulty are mutually exclusive.)
+- You must choose a topic from the provided "eligible_topics" list (if topic not candidate supplied).
+- You must choose a difficulty from ["Easy", "Medium", "Hard"] (if difficulty not candidate supplied).
+"""
+
+def create_user_message(eligible_counts, mastery_stats, selected_topic, selected_difficulty):
+    """
+    Creates a user message for the LLM based on the candidate's history and the available topics.
+    """
+    message = f"""
+    Candidate History: {mastery_stats}
+    Eligible Topics: {eligible_counts}
+    """
+
+    if selected_topic:
+        message += f"User has already selected topic: {selected_topic}"
+    if selected_difficulty:
+        message += f"User has already selected difficulty: {selected_difficulty}"
+
+    return message
+def lambda_handler(event, context):
+    """
+    Entry point for LF1.
+    Expected Event: { "userId": "Jesse", "topic": "Arrays"|None, "difficulty": "Medium"|None }
+    """
+
+    query_params = event.get("queryStringParameters") or {}
+    cognito_sub = query_params.get("userId")
+    requested_topic = query_params.get("topic")
+    requested_difficulty = query_params.get("difficulty")
+    print(query_params, cognito_sub, requested_topic, requested_difficulty)
+
+    if not cognito_sub:
+        return {
+            "statusCode": 400,
+            "body": json.dumps({
+                "error": "userId query parameter is required"
+            })
+        }
+    
+    selected_topic = requested_topic
+    selected_difficulty = requested_difficulty
+    print(f"User requests a {selected_topic} {selected_difficulty} question")
+    ai_reasoning = None
+
+
+    # --- Step A: AI Decision (If inputs are missing) ---
+    if not selected_topic or not selected_difficulty:
+        print(" > Inputs missing. Calling AI to decide...")
+
+        eligible_counts, mastery_stats = get_ai_context(cognito_sub)
+        total_remaining = sum(sum(topic.values()) for topic in eligible_counts.values())
+
+        # EDGE CASE: Course Completed! Make all questions eligible but allow AI to still reccommend
+        if total_remaining == 0:
+            eligible_counts = get_all_questions()
+            
+        user_message = create_user_message(eligible_counts, mastery_stats, selected_topic, selected_difficulty)
+
+        response = client.responses.parse(
+            model="gpt-4o-mini",
+            instructions=system_instructions,
+            input=user_message,
+            text_format=QuestionRecommendation
+        )
+
+        output = response.output_parsed
+    
+        if not selected_topic:
+            selected_topic = output.topic
+        if not selected_difficulty:
+            selected_difficulty = output.difficulty
+        ai_reasoning = output.reasoning
+
+        print(f" > AI Recommendation: {selected_topic} ({selected_difficulty})")
+        print(f" > Reasoning: {ai_reasoning}")
+
+    # -- Step B: Database Selection ---
+
+    question_data = select_next_question(cognito_sub, selected_topic, selected_difficulty)
+    print("QUESTION DATA", question_data)
+    
+
+    if not question_data:
+        if ai_reasoning:
+            return {
+                "statusCode": 404,
+                "headers": {
+                    "Access-Control-Allow-Origin": "http://localhost:5174",
+                    "Access-Control-Allow-Credentials": "false"
+                },
+                "body": json.dumps({
+                    "error": "AI Hallucination Detected",
+                    "message": f"Whoops! The AI suggested a question from the future. We don't have any {selected_difficulty} {selected_topic} problems... yet. Please try again."
+                })
+            }
+        else:
+            return {
+                "statusCode": 404,
+                "headers": {
+                    "Access-Control-Allow-Origin": "http://localhost:5174",
+                    "Access-Control-Allow-Credentials": "false"
+                },
+                "body": json.dumps({
+                    "error": f"We don't have any {selected_difficulty} {selected_topic} problems... yet. Please try again.",
+                })
+            }
+    
+    return {
+        "statusCode": 200,
+        "headers": {
+            "Access-Control-Allow-Origin": "http://localhost:5174",  # or * for dev
+            "Access-Control-Allow-Credentials": "false"
+        },
+        "body": json.dumps({
+            "id": str(question_data["id"]),
+            "title": question_data["title"],
+            "difficulty": question_data["difficulty"],
+            "topic": question_data["topic"],
+            "description": question_data["statement"],
+            "template": {"python": question_data["python_start"], "cpp": question_data["cpp_start"]},
+            "examples": [
+                {
+                    "input": question_data["example_input"],
+                    "output": question_data["example_output"],
+                    "explanation": question_data["example_explanation"]
+                } if question_data["has_example"] else None
+            ],
+            "constraints": question_data["constraints"],
+            "hints": question_data["hints"],
+            "ai_reasoning": ai_reasoning,
+        })
+    }
+
