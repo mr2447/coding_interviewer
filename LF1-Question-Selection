@@ -219,11 +219,11 @@ Select the most appropriate Topic and Difficulty for the candidate's next coding
 Decision Logic:
 1. Growth: If the candidate has a high correct rate (>70%) in a topic/difficulty, challenge them by increasing difficulty or switching to a topic they haven't mastered.
 2. Remediation: If the candidate has a low correct rate (<40%) or failed their last attempt, lower the difficulty or keep them on the same topic for reinforcement.
-3. Exploration: If the candidate has no history, start with "Easy" difficulty and a fundamental topic like "Arrays" or "Strings".
+3. Exploration: If the candidate has no history, start with "Easy" difficulty and a fundamental topic like "array" or "string".
 
 Constraints:
-- If the candidate has already selected a topic or difficulty, you must choose the same topic or difficulty. (Candidate supplied topic and difficulty are mutually exclusive.)
-- You must choose a topic from the provided "eligible_topics" list (if topic not candidate supplied).
+- PRIORITY:If the candidate has already selected a topic or difficulty, YOU MUST USE the same topic or difficulty. (Candidate supplied topic and difficulty are mutually exclusive.)
+- You must choose a topic from the provided "Eligible Topics" list (if topic not candidate supplied).
 - You must choose a difficulty from ["Easy", "Medium", "Hard"] (if difficulty not candidate supplied).
 """
 
