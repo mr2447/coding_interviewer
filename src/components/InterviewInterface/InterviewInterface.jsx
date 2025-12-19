@@ -298,11 +298,8 @@ function InterviewInterface() {
         
         if (isSuccess) {
           setSubmissionStatus('success');
-          // Show form after successful submission
-          setTimeout(() => {
-            setShowQuestionForm(true);
-            setTimeout(() => setSubmissionStatus(null), 2000);
-          }, 1000);
+          // Clear success status after 2 seconds for visual feedback
+          setTimeout(() => setSubmissionStatus(null), 2000);
         } else {
           setSubmissionStatus('error');
           setTimeout(() => setSubmissionStatus(null), 3000);
@@ -311,10 +308,8 @@ function InterviewInterface() {
         // Handle simple success/failure message
         if (message.success) {
           setSubmissionStatus('success');
-          setTimeout(() => {
-            setShowQuestionForm(true);
-            setTimeout(() => setSubmissionStatus(null), 2000);
-          }, 1000);
+          // Clear success status after 2 seconds for visual feedback
+          setTimeout(() => setSubmissionStatus(null), 2000);
         } else {
           setSubmissionStatus('error');
           setTimeout(() => setSubmissionStatus(null), 3000);
@@ -543,10 +538,8 @@ function InterviewInterface() {
 
         if (result.success) {
           setSubmissionStatus('success');
-          setTimeout(() => {
-            setShowQuestionForm(true);
-            setTimeout(() => setSubmissionStatus(null), 2000);
-          }, 1000);
+          // Clear success status after 2 seconds for visual feedback
+          setTimeout(() => setSubmissionStatus(null), 2000);
         } else {
           setSubmissionStatus('error');
           setTimeout(() => setSubmissionStatus(null), 3000);
