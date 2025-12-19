@@ -6,8 +6,6 @@ import sys
 import subprocess
 import time
 
-from markdown_it.common.html_re import declaration
-
 # setup logger
 logging.basicConfig(
     stream=sys.stdout,
@@ -97,14 +95,16 @@ def run_code():
     payload = json.loads(os.environ["PAYLOAD"])
     logger.info("Payload: %s", json.dumps(payload))
 
-    func_name = f"{payload["func_name"]}("
+    func_name = f"{payload["func_name"]}"
     failed_case = 0
     failed_output = ""
     expected_output = ""
     failed_returncode = 0
+    cur_input = payload["test_cases"][0]
 
     start = time.time()
     for i, case in enumerate(payload["test_cases"], 1):
+        cur_input = case
         declarations = ""
         arg_names = []
         #create arguments line by line
@@ -151,6 +151,7 @@ def run_code():
             logger.info(f"result.stderr: {compile_proc.stderr}")
             failed_output = compile_proc.stderr
             failed_case = i
+            failed_input = case
             failed_returncode = compile_proc.returncode
             expected_output = str(case["expected_output"])
             break
@@ -189,13 +190,20 @@ def run_code():
     if failed_case == 0:
         response = {"success": True,
                     "runtime": runtime,
-                    "user_id": payload["cid"]}
+                    "user_id": payload["cid"],
+                    "qid": payload["qid"],
+                    "language": payload["language"],
+                    "code": payload["code"]}
     else:
         response = {"success": False,
                     "failed_case": failed_case,
                     "output": failed_output,
                     "expected_output": expected_output,
-                    "user_id": payload["cid"]}
+                    "input": cur_input,
+                    "user_id": payload["cid"],
+                    "qid": payload["qid"],
+                    "language": payload["language"],
+                    "code": payload["code"]}
 
     logger.info(f"Response:\n {response}")
     try:

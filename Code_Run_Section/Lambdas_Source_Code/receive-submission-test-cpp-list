@@ -1,0 +1,7 @@
+{
+  "httpMethod": "POST",
+  "requestContext": {
+    "region": "us-east-2"
+  },
+  "body": "{\"code\": \"class Solution {public: bool is_palindrome_number(int x) { if (x < 0 || (x % 10 == 0 && x != 0)) { return false;} int revertedNumber = 0; while (x > revertedNumber) {revertedNumber =revertedNumber * 10 + x % 10;x /= 10;}return x == revertedNumber || x == revertedNumber / 10;}};\", \"questionId\": \"4\", \"userId\": \"1\", \"language\": \"C++\"}"
+}

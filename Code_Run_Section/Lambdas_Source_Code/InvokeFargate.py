@@ -13,6 +13,8 @@ DB_USER = os.environ.get('DB_User')
 DB_PASS = os.environ.get('DB_Pass')
 DB_NAME = os.environ.get('DB_Name')
 PORT = os.environ.get('DB_Port')
+logger.info(f"DB_Name: {DB_NAME}")
+
 
 def pull_from_RDS(qid):
     connection = None
@@ -25,9 +27,20 @@ def pull_from_RDS(qid):
             port=PORT,
             connect_timeout=5
         )
+        # Log info about database
+        dsn_params = connection.get_dsn_parameters()
+
+        logger.info(
+            "Successfully connected to RDS. Host: %s, DB: %s, User: %s, Server Version: %s",
+            dsn_params.get('host'),
+            dsn_params.get('dbname'),
+            dsn_params.get('user'),
+            connection.server_version
+        )
 
         cursor = connection.cursor()
-        #Pull test cases
+
+        # Pull test cases
         cursor.execute(
             """
             SELECT input, expected_output 
@@ -44,15 +57,16 @@ def pull_from_RDS(qid):
                 "expected_output": case[1]
             })
 
-        #Pull function name
+        # Pull function name
         cursor.execute(
             """
             SELECT func_name 
             FROM public.problems
-            WHERE problem_id = %s;
+            WHERE id = %s;
             """, (qid,)
         )
         func_name = cursor.fetchone()[0]
+        logger.info(f"Function name: {func_name}")
 
         return (test_cases, func_name)
 
@@ -65,17 +79,18 @@ def pull_from_RDS(qid):
         if connection:
             connection.close()
 
+
 def run_task(attributes, problem_info):
+    test_cases, func_name = problem_info
     logger.info(f"Test cases: {test_cases}")
     logger.info(f"Function name: {func_name}")
-    test_cases, func_name = problem_info
     # Extract attributes
     region = attributes['Region']['stringValue']
     code = attributes['Code']['stringValue']
     language = attributes['language']['stringValue']
     qid = attributes['qid']['stringValue']
     cid = attributes['cid']['stringValue']
-    target_lambda = attributes['TargetLambda']['stringValue']
+    target_lambda = os.environ['TargetLambda']
 
     codeRunner = boto3.client('ecs', region_name=region)
 
@@ -92,10 +107,18 @@ def run_task(attributes, problem_info):
     }
 
     # Run the task
+    if language.lower() == "python":
+        taskDef = os.environ["TaskDefPython"]
+        containerName = os.environ["PythonContainerName"]
+    elif language.lower():
+        taskDef = os.environ["TaskDefCpp"]
+        containerName = os.environ["CppContainerName"]
+    else:
+        logger.error(f"Unsupported language: {language}")
     response = codeRunner.run_task(
         cluster=os.environ["Cluster"],
         launchType="FARGATE",
-        taskDefinition=os.environ['TaskDef'],
+        taskDefinition=taskDef,
         count=1,
         networkConfiguration={
             "awsvpcConfiguration": {
@@ -107,7 +130,7 @@ def run_task(attributes, problem_info):
         overrides={
             "containerOverrides": [
                 {
-                    "name": os.environ["ContainerName"],
+                    "name": containerName,
                     "environment": [
                         {"name": "PAYLOAD", "value": json.dumps(payload)}
                     ]

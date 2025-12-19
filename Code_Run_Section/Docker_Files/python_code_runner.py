@@ -33,12 +33,12 @@ def run_code():
     failed_case = 0
     failed_output = ""
     expected_output = ""
-
+    curr_input = payload["test_cases"][0]
     start = time.time()
     i = 1
     #Run each test case
     for case in payload["test_cases"]:
-
+        curr_input = case
         full_script = IMPORTS + payload["code"] + MAIN + func_name + "**" + str(case["input"]) + "), end = \"\")"
         logger.info(json.dumps({"script": full_script}))
         #write python file
@@ -71,13 +71,20 @@ def run_code():
     if failed_case == 0:
         response = {"success": True,
                     "runtime": runtime,
-                    "cid": payload["cid"]}
+                    "cid": payload["cid"],
+                    "qid": payload["qid"],
+                    "language": payload["language"],
+                    "code": payload["code"]}
     else:
         response = {"success": False,
                     "failed_case": failed_case,
                     "output": failed_output,
                     "expected_output": expected_output,
-                    "cid": payload["cid"]}
+                    "input": curr_input,
+                    "cid": payload["cid"],
+                    "qid": payload["qid"],
+                    "language": payload["language"],
+                    "code": payload["code"]}
 
     logger.info(f"Response:\n {response}")
     try:

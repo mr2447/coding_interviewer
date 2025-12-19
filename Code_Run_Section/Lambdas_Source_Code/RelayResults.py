@@ -4,10 +4,7 @@ import os
 import json
 from urllib.parse import urlparse
 from botocore.exceptions import ClientError
-
 import psycopg2
-
-# from psycopg2 import sql  # not needed yet, but handy if you later need dynamic table names
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -119,6 +116,11 @@ def insert_submission(user_sub, question_id, code, language, results):
             return
 
         conn = get_db_connection()
+        logger.info("Parameters before sql insertion:")
+        logger.info(
+            f"User {user_sub} | Problem: {problem_id} | Status: {status} "
+            f"({runtime_ms}ms) | Lang: {language} | Code: {repr(code)}"
+        )
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -338,6 +340,7 @@ def lambda_handler(event, context):
             "language": language,
             "success": parsed_results.get('success', False) if isinstance(parsed_results, dict) else False
         }
+        print("Message", message)
 
         if isinstance(parsed_results, dict):
             if 'tests' in parsed_results:
@@ -352,6 +355,7 @@ def lambda_handler(event, context):
                 message['success'] = parsed_results.get('success', False)
                 message['runtime'] = parsed_results.get('runtime')
 
+        logger.info(f"Prepared message to send to frontend: {json.dumps(message)}")
         # Send message via WebSocket if we have a connection
         if connection_id:
             success = send_websocket_message(connection_id, message)
