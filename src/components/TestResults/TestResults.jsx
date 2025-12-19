@@ -5,9 +5,12 @@ const TestResults = ({ testResults }) => {
     return null;
   }
 
-  const { success, passed, total, runtime, tests } = testResults;
+  console.log('TestResults component received:', testResults);
+  const { success, passed = 0, total = 0, runtime, tests = [] } = testResults;
+  console.log('TestResults - extracted values:', { success, passed, total, testsLength: tests.length, tests });
   const allPassed = success || (passed === total && total > 0);
   const failedTest = tests?.find(test => test.status === 'failed');
+  console.log('TestResults - failedTest:', failedTest);
 
   return (
     <div className="test-results-container">
@@ -21,7 +24,7 @@ const TestResults = ({ testResults }) => {
       <div className="test-results-summary">
         <div className="summary-item">
           <span className="summary-label">Passed:</span>
-          <span className="summary-value">{passed} / {total}</span>
+          <span className="summary-value">{passed}</span>
         </div>
         {runtime && (
           <div className="summary-item">
@@ -36,7 +39,13 @@ const TestResults = ({ testResults }) => {
           <h4>Failed Test Case</h4>
           <div className="test-detail-row">
             <span className="detail-label">Input:</span>
-            <code className="detail-value">{failedTest.input || 'N/A'}</code>
+            <code className="detail-value">
+              {failedTest.input !== undefined && failedTest.input !== null 
+                ? (typeof failedTest.input === 'object' 
+                    ? JSON.stringify(failedTest.input, null, 2) 
+                    : String(failedTest.input))
+                : 'N/A'}
+            </code>
           </div>
           <div className="test-detail-row">
             <span className="detail-label">Expected:</span>
@@ -44,7 +53,11 @@ const TestResults = ({ testResults }) => {
           </div>
           <div className="test-detail-row">
             <span className="detail-label">Actual:</span>
-            <code className="detail-value detail-actual">{failedTest.actual || failedTest.error || 'N/A'}</code>
+            <code className="detail-value detail-actual">
+              {failedTest.actual !== undefined && failedTest.actual !== null 
+                ? String(failedTest.actual) 
+                : 'N/A'}
+            </code>
           </div>
           {failedTest.error && failedTest.error !== failedTest.actual && (
             <div className="test-detail-row">

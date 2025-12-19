@@ -119,7 +119,7 @@ const ChatBot = ({ codeContent, questionId, questionPrompt, userId, testResultsS
       <div className="chatbot-messages">
         {hints.length === 0 ? (
           <div className="no-hints-message">
-            Click "Generate Hint" to get help with your code.
+            Click "Ask for Help" to get help with your code.
           </div>
         ) : (
           hints.map((hint, idx) => (
@@ -145,7 +145,7 @@ const ChatBot = ({ codeContent, questionId, questionPrompt, userId, testResultsS
           onClick={handleGenerateHint}
           disabled={isLoading}
         >
-          {isLoading ? 'Generating...' : 'Generate Hint'}
+          {isLoading ? 'Asking...' : 'Ask for Help'}
         </button>
       </div>
     </div>
