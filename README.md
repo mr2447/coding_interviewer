@@ -2,6 +2,10 @@
 
 A full-stack cloud-native platform for coding interview practice, featuring real-time code execution, AI-powered hints, and personalized question selection. Built with React, AWS Lambda, ECS Fargate, and PostgreSQL.
 
+## System Architecture
+
+![System Architecture](System-Architecture.png)
+
 ## Table of Contents
 
 - [Overview](#overview)
