@@ -27,6 +27,7 @@ The Coding Interviewer Platform is a comprehensive solution for practicing codin
 - **AI-Powered Hints**: OpenAI integration for contextual hints based on user code and test results
 - **Intelligent Question Selection**: AI-driven question recommendations based on user performance and mastery
 - **User Authentication**: AWS Cognito integration for secure user management
+- **Automatic User Provisioning**: Cognito PostConfirmation trigger automatically creates database user records
 - **Submission History**: PostgreSQL database for tracking user submissions and performance
 
 ## Architecture
@@ -85,13 +86,20 @@ Results → Lambda → WebSocket → Frontend
    - Stores connection mappings in DynamoDB
    - Associates connections with user IDs
 
-5. **Question Selection Lambda** (`LF1-Question-Selection`)
+5. **CognitoPostConfirmation Lambda** (`Code_Run_Section/Lambdas_Source_Code/CognitoPostConfirmation.py`)
+   - Automatically triggered by AWS Cognito after user email confirmation
+   - Creates user record in RDS `coder` table
+   - Links Cognito user ID (sub claim) to database user record
+   - Handles race conditions with ON CONFLICT clause
+   - Ensures seamless user onboarding without manual database setup
+
+6. **Question Selection Lambda** (`LF1-Question-Selection`)
    - AI-powered question recommendation
    - Analyzes user performance and mastery
    - Queries RDS for available questions
    - Returns personalized question based on preferences
 
-6. **Hint Generation Lambda** (`LF2-Hint-Generation`)
+7. **Hint Generation Lambda** (`LF2-Hint-Generation`)
    - Generates contextual hints using OpenAI
    - Maintains conversation state via thread_id
    - Considers user code, test results, and question context
@@ -181,6 +189,7 @@ coding_interviewer/
 │   │   ├── ReceiveSubmission.py    # API Gateway → SQS
 │   │   ├── InvokeFargate.py        # SQS → ECS Fargate
 │   │   ├── RelayResults.py         # Results → WebSocket + RDS
+│   │   ├── CognitoPostConfirmation.py # User registration → RDS
 │   │   └── StoreResults.py         # Additional result storage
 │   ├── Docker_Files/          # Code execution containers
 │   │   ├── python_code_runner.py  # Python execution logic
@@ -277,10 +286,13 @@ coding_interviewer/
 
 1. **Create RDS PostgreSQL instance** (or use existing)
 2. **Run database migrations** to create tables:
+   - `coder` - User account information (linked to Cognito users)
    - `problems` - Coding questions
    - `test_cases` - Test cases for each problem
    - `submissions` - User submission history
    - `tags` and `problem_tags` - Question categorization
+
+**Important:** The `coder` table must exist before users can register. The CognitoPostConfirmation Lambda will automatically populate this table when users confirm their email.
 
 #### CloudFormation Deployment
 
@@ -307,7 +319,16 @@ coding_interviewer/
      --capabilities CAPABILITY_IAM
    ```
 
-4. **Deploy Frontend:**
+4. **Configure Cognito PostConfirmation Trigger:**
+   After deploying the CognitoPostConfirmation Lambda, configure it as a trigger in your Cognito User Pool:
+   ```bash
+   aws cognito-idp update-user-pool \
+     --user-pool-id us-east-2_xxxxx \
+     --lambda-config PostConfirmation=<lambda-function-arn>
+   ```
+   This ensures user records are automatically created in the `coder` table when users confirm their email.
+
+5. **Deploy Frontend:**
    ```bash
    ./deploy-frontend.sh
    ```
@@ -468,6 +489,18 @@ Or use the provided script:
 
 ## Development Notes
 
+### User Registration Flow
+
+1. User signs up via frontend → AWS Cognito User Pool
+2. Cognito sends verification email to user
+3. User confirms email → Cognito triggers `PostConfirmation` event
+4. **CognitoPostConfirmation Lambda** automatically invoked:
+   - Extracts `sub` (user ID) and `username` from Cognito event
+   - Connects to RDS PostgreSQL
+   - Inserts record into `coder` table with `cognito_sub`, `user_name`, and timestamp
+   - Uses `ON CONFLICT` to handle duplicate triggers gracefully
+5. User record now exists in database, ready for submissions and analytics
+
 ### Code Execution Flow
 
 1. User submits code via frontend → API Gateway → `ReceiveSubmission` Lambda
@@ -490,12 +523,29 @@ Or use the provided script:
 
 ### Database Schema
 
-Key tables:
+**PostgreSQL (RDS) Tables:**
+- **coder**: User account information
+  - `cognito_sub` (UUID, PRIMARY KEY): Cognito user ID (sub claim)
+  - `user_name` (VARCHAR): Username
+  - `u_time_stamp` (TIMESTAMP): Record creation/update timestamp
+  - Automatically populated by CognitoPostConfirmation Lambda on user registration
 - **problems**: Question metadata (id, title, difficulty, description, templates)
 - **test_cases**: Test inputs/outputs for each problem
-- **submissions**: User submission history (user_sub, problem_id, code, language, status, runtime_ms)
+- **submissions**: User submission history
+  - `user_sub` (UUID): References `coder.cognito_sub`
+  - `problem_id` (INTEGER): References `problems.id`
+  - `code` (TEXT): Submitted code
+  - `language` (VARCHAR): Programming language
+  - `status` (VARCHAR): 'pass' or 'fail'
+  - `runtime_ms` (NUMERIC): Execution time in milliseconds
+  - `created_at` (TIMESTAMP): Submission timestamp
 - **tags** / **problem_tags**: Question categorization
-- **connections** (DynamoDB): WebSocket connection tracking
+
+**DynamoDB Tables:**
+- **connections**: WebSocket connection tracking
+  - `connectionId` (String, PRIMARY KEY): WebSocket connection ID
+  - `userId` (String): Cognito user ID (indexed via GSI)
+  - `connectedAt` (String): Connection timestamp
 
 ### Environment Variables
 
