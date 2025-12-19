@@ -82,10 +82,119 @@ function InterviewInterface() {
     return {
       status: 'Failed',
       first_failed_test: failedTest ? {
-        input: failedTest.input || 'N/A',
+        input: (failedTest.input && typeof failedTest.input === 'object') 
+          ? JSON.stringify(failedTest.input, null, 2) 
+          : (failedTest.input || 'N/A'),
         expected: failedTest.expected || 'N/A',
         actual: failedTest.actual || failedTest.error || 'N/A',
       } : null,
+    };
+  };
+
+  // Transform new test results format (from WebSocket) to component-expected format
+  const transformWebSocketTestResults = (testResults) => {
+    if (!testResults) {
+      return null;
+    }
+
+    // Check if it's already in the expected format (has tests array)
+    if (testResults.tests && Array.isArray(testResults.tests)) {
+      // Ensure passed and total are defined
+      return {
+        ...testResults,
+        passed: testResults.passed ?? (testResults.tests.filter(t => t.status === 'passed').length),
+        total: testResults.total ?? testResults.tests.length,
+      };
+    }
+
+    // Transform from new format: { success, failed_case, output, expected_output }
+    const success = testResults.success === true;
+    const failedCase = testResults.failed_case || 0;
+    
+    console.log('transformWebSocketTestResults - input:', {
+      success,
+      failedCase,
+      hasOutput: testResults.output !== undefined,
+      hasExpectedOutput: testResults.expected_output !== undefined,
+      output: testResults.output,
+      expected_output: testResults.expected_output
+    });
+    
+    // If we have output and expected_output, create a test structure
+    if (testResults.output !== undefined || testResults.expected_output !== undefined) {
+      const tests = [];
+      
+      // Create a failed test entry if there's a failure
+      // Also create if we have output/expected_output even if failedCase is 0 (edge case)
+      if (!success) {
+        // Ensure output is always a string (handle null, undefined, empty string)
+        // Empty string is valid output, so we preserve it
+        const outputStr = testResults.output !== undefined && testResults.output !== null 
+          ? String(testResults.output) 
+          : (testResults.actual !== undefined && testResults.actual !== null 
+              ? String(testResults.actual) 
+              : 'N/A');
+        
+        // Handle nested input structure: input.input contains the actual input data
+        let inputValue = 'N/A';
+        if (testResults.input) {
+          try {
+            if (typeof testResults.input === 'object' && testResults.input !== null) {
+              // If input is an object with nested 'input' key, extract it
+              if (testResults.input.input !== undefined && testResults.input.input !== null) {
+                // Format the input object nicely (e.g., {nums: [1,2,3], target: 5})
+                inputValue = JSON.stringify(testResults.input.input, null, 2);
+              } else {
+                // If it's already the input data, stringify it
+                inputValue = JSON.stringify(testResults.input, null, 2);
+              }
+            } else {
+              // If input is already a string, use it directly
+              inputValue = String(testResults.input);
+            }
+          } catch (e) {
+            console.error('Error processing input:', e, testResults.input);
+            inputValue = String(testResults.input);
+          }
+        }
+        
+        const testEntry = {
+          status: 'failed',
+          input: inputValue,
+          expected: testResults.expected_output || testResults.expected || 'N/A',
+          actual: outputStr,
+          error: testResults.error || null,
+        };
+        
+        console.log('transformWebSocketTestResults - created test entry:', testEntry);
+        tests.push(testEntry);
+      }
+      
+      // Calculate passed tests: failed_case - 1 (since failed_case is 1-indexed)
+      // If failed_case is 1, then 0 tests passed (1-1=0)
+      // If failed_case is 2, then 1 test passed (2-1=1)
+      const passed = failedCase > 0 ? Math.max(0, failedCase - 1) : 0;
+      // Total is the failed_case (since that's the test number that failed)
+      const total = success ? 1 : Math.max(1, failedCase || 1);
+      
+      const result = {
+        success,
+        passed: Number(passed),
+        total: Number(total),
+        tests,
+        runtime: testResults.runtime || null,
+      };
+      
+      console.log('transformWebSocketTestResults - output:', result);
+      return result;
+    }
+
+    // Fallback: return minimal structure
+    return {
+      success,
+      passed: success ? 1 : 0,
+      total: 1,
+      tests: [],
     };
   };
 
@@ -160,13 +269,34 @@ function InterviewInterface() {
       
       // Handle test results
       if (message.testResults || message.Results) {
-        const testResults = message.testResults || JSON.parse(message.Results || '{}');
-        const summary = transformTestResults(testResults);
+        let rawTestResults = message.testResults || JSON.parse(message.Results || '{}');
+        console.log('Raw testResults from WebSocket:', rawTestResults);
+        
+        // Transform to component-expected format
+        const transformedResults = transformWebSocketTestResults(rawTestResults);
+        console.log('Transformed results:', transformedResults);
+        
+        // Ensure all test entries have string inputs (defensive check)
+        if (transformedResults && transformedResults.tests) {
+          transformedResults.tests = transformedResults.tests.map(test => {
+            if (test.input && typeof test.input === 'object') {
+              test.input = JSON.stringify(test.input, null, 2);
+            }
+            return test;
+          });
+        }
+        
+        const summary = transformTestResults(transformedResults);
+        console.log('Test results summary:', summary);
+        
         setTestResultsSummary(summary);
-        setTestResults(testResults); // Store full test results for display
+        setTestResults(transformedResults); // Store transformed test results for display
 
         // Update submission status based on results
-        if (testResults.success || (testResults.passed === testResults.total && testResults.total > 0)) {
+        const isSuccess = transformedResults?.success || 
+                         (transformedResults?.passed === transformedResults?.total && transformedResults?.total > 0);
+        
+        if (isSuccess) {
           setSubmissionStatus('success');
           // Show form after successful submission
           setTimeout(() => {

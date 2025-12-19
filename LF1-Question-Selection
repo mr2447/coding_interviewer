@@ -310,7 +310,7 @@ def lambda_handler(event, context):
             return {
                 "statusCode": 404,
                 "headers": {
-                    "Access-Control-Allow-Origin": "http://localhost:5174",
+                    "Access-Control-Allow-Origin": "http://localhost:5173",
                     "Access-Control-Allow-Credentials": "false"
                 },
                 "body": json.dumps({
@@ -322,7 +322,7 @@ def lambda_handler(event, context):
             return {
                 "statusCode": 404,
                 "headers": {
-                    "Access-Control-Allow-Origin": "http://localhost:5174",
+                    "Access-Control-Allow-Origin": "http://localhost:5173",
                     "Access-Control-Allow-Credentials": "false"
                 },
                 "body": json.dumps({
@@ -333,7 +333,7 @@ def lambda_handler(event, context):
     return {
         "statusCode": 200,
         "headers": {
-            "Access-Control-Allow-Origin": "http://localhost:5174",  # or * for dev
+            "Access-Control-Allow-Origin": "http://localhost:5173",  # or * for dev
             "Access-Control-Allow-Credentials": "false"
         },
         "body": json.dumps({
