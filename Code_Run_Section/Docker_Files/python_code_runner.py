@@ -70,12 +70,14 @@ def run_code():
     runtime = time.time() - start
     if failed_case == 0:
         response = {"success": True,
-                    "runtime": runtime}
+                    "runtime": runtime,
+                    "cid": payload["cid"]}
     else:
         response = {"success": False,
                     "failed_case": failed_case,
                     "output": failed_output,
-                    "expected_output": expected_output}
+                    "expected_output": expected_output,
+                    "cid": payload["cid"]}
 
     logger.info(f"Response:\n {response}")
     try:
